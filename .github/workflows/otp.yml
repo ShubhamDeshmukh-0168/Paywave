@@ -1,0 +1,38 @@
+name: Show sign-up codes
+
+# MANUAL ONLY. When no SMTP secrets are configured, sign-up verification codes (OTP) are not emailed:
+# the API pods write them to their log. This workflow prints the most recent ones so you can finish
+# registering. Codes are valid for 10 minutes. Anyone who can read this repo's Actions logs can see them,
+# so use it for testing only and configure SMTP for real use.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  CLUSTER_NAME: paywave-prod
+
+jobs:
+  otp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: azure/setup-kubectl@v4
+      - name: Print recent codes
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null
+          {
+            echo "## Recent sign-up codes (valid 10 minutes)"
+            echo ""
+            echo '```'
+            kubectl -n paywave logs -l app=paywave-api --tail=500 --prefix=false --max-log-requests=10 \
+              | grep 'OTP written to log' | tail -10 | jq -r '"\(.to)  \(.code)"' || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

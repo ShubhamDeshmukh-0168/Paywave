@@ -68,6 +68,7 @@ grafana:
   serviceAccount:
     create: true
     name: grafana
+    automountServiceAccountToken: true # the dashboard sidecar needs the API token
     annotations:
       eks.amazonaws.com/role-arn: "${GRAFANA_ROLE_ARN}"
 

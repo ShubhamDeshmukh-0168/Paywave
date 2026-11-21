@@ -21,5 +21,5 @@ else
   echo "EKS cluster $CLUSTER_NAME not found, skipping Kubernetes cleanup"
 fi
 
-cd "$ROOT/terraform"
+cd "$ROOT/terraform" || exit 1
 terraform destroy -input=false -auto-approve

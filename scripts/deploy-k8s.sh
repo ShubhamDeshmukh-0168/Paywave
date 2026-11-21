@@ -28,6 +28,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 CONFIG_HASH="$(printf '%s' "$PAYMENTS_API_URL" | sha256sum | cut -c1-16)"
 LOG_OTP_WITHOUT_SMTP="${LOG_OTP_WITHOUT_SMTP:-false}"
 export IMAGE API_IMAGE PAYMENTS_API_URL API_POD_ROLE_ARN DB_HOST DB_USER DB_NAME DB_SECRET_ARN APP_SECRET_ARN AWS_REGION CONFIG_HASH LOG_OTP_WITHOUT_SMTP
+# shellcheck disable=SC2016 # the single quotes are intentional: envsubst needs the literal ${NAMES}
 VARS='${IMAGE} ${API_IMAGE} ${PAYMENTS_API_URL} ${API_POD_ROLE_ARN} ${DB_HOST} ${DB_USER} ${DB_NAME} ${DB_SECRET_ARN} ${APP_SECRET_ARN} ${AWS_REGION} ${CONFIG_HASH} ${LOG_OTP_WITHOUT_SMTP}'
 
 # The API goes first: the web pods' nginx resolves the paywave-api Service name when it starts

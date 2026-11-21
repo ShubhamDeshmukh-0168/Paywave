@@ -4,7 +4,7 @@
 # Required env: AWS_REGION, CLUSTER_NAME, GRAFANA_ROLE_ARN
 # Optional: GRAFANA_ADMIN_PASSWORD (otherwise a random one is generated once and kept in the cluster),
 #           GRAFANA_ALLOWED_CIDR (default 0.0.0.0/0, set e.g. 203.0.113.7/32 to restrict who can reach Grafana),
-#           KPS_VERSION (pin the kube-prometheus-stack chart version; default is the latest)
+#           KPS_VERSION (kube-prometheus-stack chart version; default 93.6.1, a version this repo was checked against)
 set -euo pipefail
 
 : "${AWS_REGION:?AWS_REGION is required}"
@@ -35,14 +35,14 @@ fi
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null
 helm repo update >/dev/null
 
-VERSION_ARGS=()
-[ -n "${KPS_VERSION:-}" ] && VERSION_ARGS=(--version "$KPS_VERSION")
+KPS_VERSION="${KPS_VERSION:-93.6.1}"
 
+# shellcheck disable=SC2016 # literal ${NAMES} for envsubst
 envsubst '${AWS_REGION} ${GRAFANA_ROLE_ARN} ${GRAFANA_ALLOWED_CIDR}' \
   < "$MON/kube-prometheus-stack-values.yaml" > /tmp/kps-values.yaml
 
 if ! helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-     --namespace monitoring -f /tmp/kps-values.yaml "${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"}" \
+     --namespace monitoring -f /tmp/kps-values.yaml --version "$KPS_VERSION" \
      --wait --timeout 15m; then
   kubectl -n monitoring get pods >&2 || true
   kubectl -n monitoring describe pods >&2 || true

@@ -178,6 +178,9 @@ jobs:
                 echo "- Website: ${URL}"
                 echo "- Payments API (Lambda): ${API_URL}"
                 echo "- API service (Kubernetes): ${URL}/api/health"
+                if [ -z "${{ secrets.SMTP_HOST }}" ]; then
+                  echo "- No SMTP secrets set: sign-up codes (OTP) are not emailed. Run Actions > Show sign-up codes to read them."
+                fi
                 echo "- CloudWatch dashboard: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards/dashboard/${PROJECT_NAME}-${ENVIRONMENT}"
               } >> "$GITHUB_STEP_SUMMARY"
               echo "Website is up: ${URL}"
@@ -187,15 +190,24 @@ jobs:
           done
           echo "::error::Website health check failed"; exit 1
 
+      # The app is already live and smoke tested at this point. Monitoring is an extra: if it
+      # fails the run stays green and shows a warning (check the step log), instead of failing the deploy.
       - name: Deploy monitoring (Prometheus + Grafana)
         id: monitoring
+        continue-on-error: true
         env:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_ALLOWED_CIDR: ${{ vars.GRAFANA_ALLOWED_CIDR }}
           KPS_VERSION: ${{ vars.KPS_VERSION }}
         run: bash scripts/deploy-monitoring.sh
 
+      - name: Monitoring failed (app is still live)
+        if: ${{ steps.monitoring.outcome == 'failure' }}
+        run: |
+          echo "::warning::Prometheus/Grafana did not install. PayWave itself is deployed and working. See the 'Deploy monitoring' step log, fix it, and re-run the workflow."
+
       - name: Monitoring summary
+        if: ${{ steps.monitoring.outcome == 'success' }}
         env:
           GRAFANA_HOST: ${{ steps.monitoring.outputs.grafana_host }}
           PASSWORD_SET: ${{ secrets.GRAFANA_ADMIN_PASSWORD != '' }}

@@ -4,9 +4,11 @@ FROM node:22-alpine
 ENV NODE_ENV=production ROUTE_MODE=core PORT=3000
 WORKDIR /app
 COPY package.json ./
-# Lambda provides the AWS SDK at runtime; a container has to install it itself
-RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund \
- && npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund @aws-sdk/client-secrets-manager@^3.700.0 \
+# Lambda provides the AWS SDK at runtime, so package.json lists it under devDependencies.
+# A container has to ship it itself, hence --include=dev (it is the only devDependency).
+# NODE_ENV=production would otherwise silently drop it, even if installed by name.
+RUN npm install --include=dev --ignore-scripts --no-audit --no-fund \
+ && node -e "require('pg'); require('@aws-sdk/client-secrets-manager')" \
  && npm cache clean --force
 COPY src ./src
 COPY migrations ./migrations

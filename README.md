@@ -35,7 +35,7 @@ flowchart LR
 | CloudWatch | Log groups, 7 alarms to an SNS email topic, one dashboard, EKS control plane logs |
 | SMTP | Sign-up verification code and payment notification emails (Gmail, SES, SendGrid, anything SMTP) |
 | Prometheus + Grafana | Metrics, dashboards and alert rules on the cluster (`k8s/monitoring/`, Helm `kube-prometheus-stack`) |
-| GitHub Actions | `deploy.yml` (full deploy on push), `ci.yml` (PR checks), `destroy.yml` (manual tear down) |
+| GitHub Actions | `deploy.yml` (full deploy on push), `ci.yml` (PR checks), `destroy.yml` (manual tear down), `otp.yml` (manual: show sign-up codes when SMTP is not set) |
 
 ## Deploy in 5 steps
 
@@ -55,8 +55,8 @@ flowchart LR
    | `ALERT_EMAIL` | no | where CloudWatch alarms are sent (confirm the AWS email) |
 | `GRAFANA_ADMIN_PASSWORD` | no | Grafana login password for user `admin` (if empty, a random one is generated, see *Monitoring*) |
 
-   Optional variables *(Variables tab)*: `AWS_REGION` (default `us-east-1`), `GRAFANA_ALLOWED_CIDR` (who may open Grafana, default `0.0.0.0/0`, for example `203.0.113.7/32`), `KPS_VERSION` (pin the kube-prometheus-stack Helm chart version).
-   Without SMTP secrets the stack still works, but the OTP codes are written to the Lambda CloudWatch log group instead of being emailed (testing only).
+   Optional variables *(Variables tab)*: `AWS_REGION` (default `us-east-1`), `GRAFANA_ALLOWED_CIDR` (who may open Grafana, default `0.0.0.0/0`, for example `203.0.113.7/32`), `KPS_VERSION` (kube-prometheus-stack Helm chart version, default `93.6.1`).
+   Without SMTP secrets the stack still works, but the sign-up codes (OTP) are not emailed: the API pods write them to their log. Run **Actions > Show sign-up codes > Run workflow** right after you press *Register* to read the latest codes (valid 10 minutes), or `kubectl -n paywave logs -l app=paywave-api | grep OTP`. Testing only; configure SMTP for real use.
 4. **Push to `main`** (or run *Actions > Deploy PayWave > Run workflow*). The first run takes about 25-35 minutes (EKS and RDS are slow to create).
 5. **Open the job summary**: it shows the website URL (`http://<load-balancer>`), the API URL and the CloudWatch dashboard. Register, enter the emailed code, add money, send money.
 
@@ -73,6 +73,7 @@ The deploy installs the `kube-prometheus-stack` Helm chart into the `monitoring`
 - **Dashboards**: *PayWave API (Kubernetes)* (Prometheus), *PayWave AWS (Lambda, API Gateway, RDS)* (CloudWatch data source, read through an IRSA role with `CloudWatchReadOnlyAccess`), plus the standard Kubernetes dashboards from the chart. Add your own by putting JSON in `k8s/monitoring/dashboards/`.
 - **Alert rules** (`k8s/monitoring/rules.yaml`): API down, 5xx above 5%, p95 latency above 1 s, pod restarts. Alertmanager is off, so they show in *Grafana > Alerting*; the emailed alarms remain the CloudWatch ones.
 - **No persistent storage**: Prometheus keeps 7 days in memory-backed pod storage, so history resets if the pod restarts. This avoids the EBS CSI driver and leaves nothing behind on destroy.
+- If monitoring fails to install, the deploy still succeeds (the app is live); you get a warning and can re-run the workflow.
 - Grafana is plain HTTP and public unless you set `GRAFANA_ALLOWED_CIDR`. Restrict it.
 - To look at Prometheus itself: `kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090`.
 
