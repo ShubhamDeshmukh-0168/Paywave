@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#002e6e" />
+    <meta name="description" content="PayWave: a digital wallet. Pay by mobile number or QR, add money from a card, recharge your phone and set up AutoPay." />
+    <title>PayWave - Pay anyone with just a mobile number</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" id="brandLink" aria-label="PayWave home"><span class="b1">Pay</span><span class="b2">Wave</span></a>
+      <div class="top-actions">
+        <button id="themeBtn" class="icon-btn" type="button" aria-label="Switch light or dark theme" title="Switch theme"></button>
+        <button id="bellBtn" class="icon-btn bell hidden" type="button" aria-label="Notifications" title="Notifications">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 21h4" /></svg>
+          <span id="bellBadge" class="badge-dot hidden"></span>
+        </button>
+        <button id="logoutBtn" class="ghost hidden" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main id="app" class="container">
+      <noscript>PayWave needs JavaScript to run.</noscript>
+    </main>
+
+    <footer class="footer">
+      <span>PayWave demo wallet. Cards, recharges and payments are simulated and no real money moves.</span>
+    </footer>
+
+    <div id="notifPopover" class="popover hidden" role="dialog" aria-label="Notifications"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script src="config.js"></script>
+    <script src="qr.js"></script>
+    <script src="core.js"></script>
+    <script src="panels.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

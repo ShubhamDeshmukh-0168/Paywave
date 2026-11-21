@@ -1,0 +1,58 @@
+# Local development: the same API code against a local PostgreSQL, with a mail
+# catcher instead of a real SMTP server.
+#   docker compose up --build
+#   App:        http://localhost:8081
+#   API:        http://localhost:3000/health
+#   Mail inbox: http://localhost:8025   (OTP emails show up here)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: paywave
+      POSTGRES_PASSWORD: paywave
+      POSTGRES_DB: paywave
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paywave"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+
+  api:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: sh -c "npm install --omit=dev --ignore-scripts && node local-server.js"
+    environment:
+      LOCAL_MODE: "true"
+      PORT: "3000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: paywave
+      DB_USER: paywave
+      DB_PASSWORD: paywave
+      DB_SSL: "false"
+      JWT_SECRET: local-dev-secret-change-me-0123456789abcdef
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: PayWave <no-reply@paywave.local>
+      CORS_ORIGIN: "*"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  web:
+    build: ./frontend
+    ports:
+      - "8081:8080"
+    depends_on:
+      - api

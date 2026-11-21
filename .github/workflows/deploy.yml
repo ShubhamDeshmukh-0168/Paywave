@@ -1,0 +1,212 @@
+name: Deploy PayWave
+
+# Push to main = test, build, create/update all AWS infrastructure with Terraform,
+# build and push the web and API images, deploy both to EKS (the website and the API service run
+# on Kubernetes; the payment transactions run in AWS Lambda), smoke test the public URLs, then install
+# Prometheus + Grafana monitoring on the cluster.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false # never cancel a half-finished infrastructure change
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  PROJECT_NAME: paywave
+  ENVIRONMENT: prod
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend unit tests
+        working-directory: backend
+        run: npm test
+      - name: Frontend unit tests (QR code encoder and decoder)
+        run: node --test frontend/test/*.test.js
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$AWS_KEY" ] || [ -z "$AWS_SECRET" ]; then
+            echo "::error::Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY under Settings > Secrets and variables > Actions. See README.md."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Lambda package
+        run: bash scripts/build-lambda.sh
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create Terraform state bucket (first run only)
+        id: state
+        run: bash scripts/bootstrap-state.sh
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ steps.state.outputs.bucket }}" \
+            -backend-config="key=${PROJECT_NAME}/${ENVIRONMENT}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform apply (VPC, EKS, RDS, Lambda, API Gateway, S3, IAM, CloudWatch)
+        working-directory: terraform
+        env:
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_environment: ${{ env.ENVIRONMENT }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_smtp_host: ${{ secrets.SMTP_HOST }}
+          TF_VAR_smtp_port: ${{ secrets.SMTP_PORT || '587' }}
+          TF_VAR_smtp_user: ${{ secrets.SMTP_USER }}
+          TF_VAR_smtp_password: ${{ secrets.SMTP_PASSWORD }}
+          TF_VAR_smtp_from: ${{ secrets.SMTP_FROM }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+        run: terraform apply -input=false -auto-approve
+
+      - name: Read Terraform outputs
+        working-directory: terraform
+        run: |
+          {
+            echo "API_URL=$(terraform output -raw api_url)"
+            echo "CLUSTER_NAME=$(terraform output -raw eks_cluster_name)"
+            echo "ECR_URL=$(terraform output -raw ecr_repository_url)"
+            echo "ECR_API_URL=$(terraform output -raw ecr_backend_repository_url)"
+            echo "FRONTEND_BUCKET=$(terraform output -raw frontend_bucket)"
+            echo "API_POD_ROLE_ARN=$(terraform output -raw api_pod_role_arn)"
+            echo "DB_HOST=$(terraform output -raw db_host)"
+            echo "DB_USER=$(terraform output -raw db_user)"
+            echo "DB_NAME=$(terraform output -raw db_name)"
+            echo "DB_SECRET_ARN=$(terraform output -raw db_secret_arn)"
+            echo "APP_SECRET_ARN=$(terraform output -raw app_secret_arn)"
+            echo "GRAFANA_ROLE_ARN=$(terraform output -raw grafana_role_arn)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and push the web and API images to ECR
+        run: |
+          ECR_REGISTRY="${ECR_URL%%/*}"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          IMAGE="${ECR_URL}:${GITHUB_SHA::12}"
+          docker build -t "$IMAGE" -t "${ECR_URL}:latest" frontend
+          docker push "$IMAGE"
+          docker push "${ECR_URL}:latest"
+          API_IMAGE="${ECR_API_URL}:${GITHUB_SHA::12}"
+          docker build -t "$API_IMAGE" -t "${ECR_API_URL}:latest" backend
+          docker push "$API_IMAGE"
+          docker push "${ECR_API_URL}:latest"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "API_IMAGE=$API_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Upload static files to S3
+        run: |
+          mkdir -p /tmp/site
+          cp -r frontend/public/. /tmp/site/
+          printf 'window.APP_CONFIG = {\n  API_BASE_URL: "/api",\n  PAYMENTS_API_URL: "%s",\n};\n' "$API_URL" > /tmp/site/config.js
+          aws s3 sync /tmp/site "s3://${FRONTEND_BUCKET}/site/" --delete
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy to EKS
+        id: k8s
+        env:
+          PAYMENTS_API_URL: ${{ env.API_URL }}
+          LOG_OTP_WITHOUT_SMTP: ${{ secrets.SMTP_HOST == '' && 'true' || 'false' }}
+        run: bash scripts/deploy-k8s.sh
+
+      - name: Smoke test the payments API (Lambda)
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 30 "${API_URL}/health?deep=1"; then echo; exit 0; fi
+            echo "Payments API not ready yet (attempt $i)"; sleep 15
+          done
+          echo "::error::Payments API (Lambda) health check failed"; exit 1
+
+      - name: Smoke test the website
+        run: |
+          URL="http://${{ steps.k8s.outputs.web_host }}"
+          # a new load balancer needs a few minutes before DNS and targets are ready
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 10 "${URL}/healthz" && curl -fsS --max-time 20 "${URL}/api/health?deep=1"; then
+              {
+                echo "## PayWave is live"
+                echo ""
+                echo "- Website: ${URL}"
+                echo "- Payments API (Lambda): ${API_URL}"
+                echo "- API service (Kubernetes): ${URL}/api/health"
+                echo "- CloudWatch dashboard: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards/dashboard/${PROJECT_NAME}-${ENVIRONMENT}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "Website is up: ${URL}"
+              exit 0
+            fi
+            echo "Website not ready yet (attempt $i)"; sleep 15
+          done
+          echo "::error::Website health check failed"; exit 1
+
+      - name: Deploy monitoring (Prometheus + Grafana)
+        id: monitoring
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_ALLOWED_CIDR: ${{ vars.GRAFANA_ALLOWED_CIDR }}
+          KPS_VERSION: ${{ vars.KPS_VERSION }}
+        run: bash scripts/deploy-monitoring.sh
+
+      - name: Monitoring summary
+        env:
+          GRAFANA_HOST: ${{ steps.monitoring.outputs.grafana_host }}
+          PASSWORD_SET: ${{ secrets.GRAFANA_ADMIN_PASSWORD != '' }}
+        run: |
+          {
+            echo ""
+            echo "## Monitoring"
+            echo ""
+            echo "- Grafana: http://${GRAFANA_HOST} (user \`admin\`)"
+            echo "- Dashboards: *PayWave API (Kubernetes)*, *PayWave AWS (Lambda, API Gateway, RDS)*, plus the built-in Kubernetes dashboards"
+            if [ "$PASSWORD_SET" != "true" ]; then
+              echo "- No GRAFANA_ADMIN_PASSWORD secret is set, so a password was generated. Get it with: \`kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

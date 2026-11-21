@@ -1,0 +1,51 @@
+name: CI
+
+# Checks for pull requests. Nothing is deployed and no AWS credentials are used.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+        working-directory: backend
+      - run: node --test frontend/test/*.test.js
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: Format check (advisory, fix with `terraform fmt -recursive`)
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+        continue-on-error: true
+      - name: Validate
+        working-directory: terraform
+        run: |
+          mkdir -p ../backend/dist && touch ../backend/dist/lambda.zip
+          terraform init -backend=false -input=false
+          terraform validate
+
+  containers-and-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate dashboards (valid JSON)
+        run: for f in k8s/monitoring/dashboards/*.json; do jq empty "$f"; done
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh
+      - name: Build web image
+        run: docker build -t paywave-web:ci frontend
+      - name: Build API image
+        run: docker build -t paywave-api:ci backend

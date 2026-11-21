@@ -1,0 +1,15 @@
+# Only needed if you run Terraform by hand. The GitHub Actions pipeline passes
+# these values from GitHub Secrets as TF_VAR_* environment variables, so you
+# normally never create a real terraform.tfvars (it is git-ignored).
+
+project_name = "paywave"
+environment  = "prod"
+aws_region   = "us-east-1"
+
+smtp_host     = "smtp.gmail.com"
+smtp_port     = 587
+smtp_user     = "you@gmail.com"
+smtp_password = "your-app-password"
+smtp_from     = "PayWave <you@gmail.com>"
+
+alert_email = "you@example.com"

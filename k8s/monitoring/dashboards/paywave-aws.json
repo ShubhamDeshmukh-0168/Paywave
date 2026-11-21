@@ -1,0 +1,538 @@
+{
+ "uid": "paywave-aws",
+ "title": "PayWave AWS (Lambda, API Gateway, RDS)",
+ "tags": [
+  "paywave",
+  "aws"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "editable": true,
+ "panels": [
+  {
+   "id": 1,
+   "type": "timeseries",
+   "title": "Lambda invocations (payments)",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/Lambda",
+     "metricName": "Invocations",
+     "dimensions": {
+      "FunctionName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "Lambda invocations (payments)"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "Lambda errors",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/Lambda",
+     "metricName": "Errors",
+     "dimensions": {
+      "FunctionName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "Lambda errors"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "timeseries",
+   "title": "Lambda throttles",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/Lambda",
+     "metricName": "Throttles",
+     "dimensions": {
+      "FunctionName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "Lambda throttles"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "timeseries",
+   "title": "Lambda duration p95 (ms)",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/Lambda",
+     "metricName": "Duration",
+     "dimensions": {
+      "FunctionName": "paywave-prod-api"
+     },
+     "statistic": "p95",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "Lambda duration p95 (ms)"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "timeseries",
+   "title": "Lambda concurrent executions",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/Lambda",
+     "metricName": "ConcurrentExecutions",
+     "dimensions": {
+      "FunctionName": "paywave-prod-api"
+     },
+     "statistic": "Maximum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "Lambda concurrent executions"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "API Gateway requests",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 8,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/ApiGateway",
+     "metricName": "Count",
+     "dimensions": {
+      "ApiName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "API Gateway requests"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "API Gateway 4XX",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/ApiGateway",
+     "metricName": "4XXError",
+     "dimensions": {
+      "ApiName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "API Gateway 4XX"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "API Gateway 5XX",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/ApiGateway",
+     "metricName": "5XXError",
+     "dimensions": {
+      "ApiName": "paywave-prod-api"
+     },
+     "statistic": "Sum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "API Gateway 5XX"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "API Gateway latency p95 (ms)",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 16,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/ApiGateway",
+     "metricName": "Latency",
+     "dimensions": {
+      "ApiName": "paywave-prod-api"
+     },
+     "statistic": "p95",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "API Gateway latency p95 (ms)"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "RDS CPU %",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/RDS",
+     "metricName": "CPUUtilization",
+     "dimensions": {
+      "DBInstanceIdentifier": "paywave-prod-pg"
+     },
+     "statistic": "Average",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "RDS CPU %"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "RDS connections",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/RDS",
+     "metricName": "DatabaseConnections",
+     "dimensions": {
+      "DBInstanceIdentifier": "paywave-prod-pg"
+     },
+     "statistic": "Average",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "RDS connections"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "RDS free storage",
+   "datasource": {
+    "type": "cloudwatch",
+    "uid": "cloudwatch"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 24,
+    "w": 8,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "cloudwatch",
+      "uid": "cloudwatch"
+     },
+     "queryMode": "Metrics",
+     "metricQueryType": 0,
+     "metricEditorMode": 0,
+     "namespace": "AWS/RDS",
+     "metricName": "FreeStorageSpace",
+     "dimensions": {
+      "DBInstanceIdentifier": "paywave-prod-pg"
+     },
+     "statistic": "Minimum",
+     "period": "300",
+     "region": "default",
+     "matchExact": true,
+     "label": "RDS free storage"
+    }
+   ]
+  }
+ ],
+ "templating": {
+  "list": []
+ }
+}

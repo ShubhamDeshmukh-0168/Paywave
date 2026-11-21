@@ -1,0 +1,104 @@
+# Helm values for kube-prometheus-stack: Prometheus + Grafana + node-exporter + kube-state-metrics.
+# scripts/deploy-monitoring.sh fills ${AWS_REGION}, ${GRAFANA_ROLE_ARN}, ${GRAFANA_ALLOWED_CIDR} with envsubst.
+
+# Alertmanager is off: CloudWatch alarms already email you (terraform/cloudwatch.tf). The Prometheus
+# alert rules (k8s/monitoring/rules.yaml) still show up in Grafana > Alerting > Alert rules.
+alertmanager:
+  enabled: false
+
+# EKS runs these control-plane parts for you; they cannot be scraped, so they would only show as "down".
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # Pick up every ServiceMonitor / PodMonitor / PrometheusRule in the cluster (not only this chart's own)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    # No PersistentVolume: no EBS CSI driver needed and nothing is left behind on destroy.
+    # Metrics older than the pod's life are lost when Prometheus restarts.
+    resources:
+      requests:
+        cpu: 200m
+        memory: 600Mi
+      limits:
+        memory: 1200Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      memory: 200Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 24Mi
+    limits:
+      memory: 64Mi
+
+grafana:
+  # Admin login comes from the "grafana-admin" Secret created by scripts/deploy-monitoring.sh
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  # IRSA: lets Grafana read CloudWatch (Lambda, API Gateway, RDS) with no access keys
+  serviceAccount:
+    create: true
+    name: grafana
+    annotations:
+      eks.amazonaws.com/role-arn: "${GRAFANA_ROLE_ARN}"
+
+  service:
+    type: LoadBalancer
+    port: 80
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    loadBalancerSourceRanges:
+      - "${GRAFANA_ALLOWED_CIDR}"
+
+  # Loads every ConfigMap labelled grafana_dashboard=1 (the PayWave dashboards) from any namespace
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+  additionalDataSources:
+    - name: CloudWatch
+      type: cloudwatch
+      uid: cloudwatch
+      access: proxy
+      jsonData:
+        authType: default
+        defaultRegion: ${AWS_REGION}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 150Mi
+    limits:
+      memory: 300Mi

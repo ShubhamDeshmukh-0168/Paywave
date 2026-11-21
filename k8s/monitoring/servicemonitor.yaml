@@ -1,0 +1,18 @@
+# Tells Prometheus to scrape the PayWave API pods (port "metrics" of the paywave-api Service).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: paywave-api
+  namespace: paywave
+  labels:
+    app: paywave-api
+spec:
+  selector:
+    matchLabels:
+      app: paywave-api
+  namespaceSelector:
+    matchNames: [paywave]
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,19 @@
+node_modules/
+backend/build/
+backend/dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+*.auto.tfvars
+.terraform.tfstate.lock.info
+
+# Secrets: credentials go into GitHub Actions secrets, never into the repo
+.env
+.env.*
+*.pem
+
+.DS_Store
