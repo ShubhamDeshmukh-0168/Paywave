@@ -1,0 +1,16 @@
+# Runtime config for the web app (scripts/deploy-k8s.sh fills the variables with envsubst).
+#   API_BASE_URL       "/api": the nginx in the web pod proxies it to the Kubernetes API service
+#   PAYMENTS_API_URL   API Gateway URL of the Lambda that moves money
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paywave-web-config
+  namespace: paywave
+  labels:
+    app: paywave-web
+data:
+  config.js: |
+    window.APP_CONFIG = {
+      API_BASE_URL: "/api",
+      PAYMENTS_API_URL: "${PAYMENTS_API_URL}",
+    };

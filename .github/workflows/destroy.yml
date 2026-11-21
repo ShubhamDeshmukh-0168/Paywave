@@ -1,0 +1,62 @@
+name: Destroy PayWave
+
+# Deletes ALL AWS resources created by the deploy workflow, including the database.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DESTROY to confirm"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  PROJECT_NAME: paywave
+  ENVIRONMENT: prod
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  destroy:
+    if: ${{ inputs.confirm == 'DESTROY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: state
+        run: bash scripts/bootstrap-state.sh
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+          terraform_wrapper: false
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          # Destroy only needs the file to exist, not real contents
+          mkdir -p ../backend/dist && touch ../backend/dist/lambda.zip
+          terraform init -input=false \
+            -backend-config="bucket=${{ steps.state.outputs.bucket }}" \
+            -backend-config="key=${PROJECT_NAME}/${ENVIRONMENT}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: Destroy
+        env:
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_environment: ${{ env.ENVIRONMENT }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_smtp_port: ${{ secrets.SMTP_PORT || '587' }}
+        run: bash scripts/destroy.sh

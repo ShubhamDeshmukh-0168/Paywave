@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: paywave-web
+  namespace: paywave
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: paywave-web

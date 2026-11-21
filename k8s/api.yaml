@@ -1,0 +1,150 @@
+# PayWave API service on Kubernetes: sign-up and login, profile and photo, history, insights,
+# notifications and AutoPay set-up. Money movement runs in AWS Lambda (see terraform/lambda.tf).
+# The web pods proxy /api/ to this Service, so the browser only ever talks to one origin for it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: paywave-api
+  namespace: paywave
+  annotations:
+    eks.amazonaws.com/role-arn: "${API_POD_ROLE_ARN}" # IRSA: lets the pods read the two Secrets Manager secrets
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paywave-api-config
+  namespace: paywave
+data:
+  ROUTE_MODE: "core"
+  PORT: "3000"
+  AWS_REGION: "${AWS_REGION}"
+  DB_HOST: "${DB_HOST}"
+  DB_PORT: "5432"
+  DB_NAME: "${DB_NAME}"
+  DB_USER: "${DB_USER}"
+  DB_SECRET_ARN: "${DB_SECRET_ARN}"
+  APP_SECRET_ARN: "${APP_SECRET_ARN}"
+  OTP_TTL_MINUTES: "10"
+  LOG_OTP_WITHOUT_SMTP: "${LOG_OTP_WITHOUT_SMTP}"
+  CORS_ORIGIN: "*"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paywave-api
+  namespace: paywave
+  labels:
+    app: paywave-api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: paywave-api
+  template:
+    metadata:
+      labels:
+        app: paywave-api
+    spec:
+      serviceAccountName: paywave-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # the "node" user of the node:alpine image
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: paywave-api
+      containers:
+        - name: api
+          image: ${API_IMAGE}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: paywave-api-config
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /health?deep=1 # also proves the pod can reach PostgreSQL (and runs the migrations)
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paywave-api
+  namespace: paywave
+  labels:
+    app: paywave-api
+spec:
+  type: ClusterIP # internal only; reached through the web pods' /api/ proxy
+  selector:
+    app: paywave-api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: paywave-api
+  namespace: paywave
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: paywave-api
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: paywave-api
+  namespace: paywave
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: paywave-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

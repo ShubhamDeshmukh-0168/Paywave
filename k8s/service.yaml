@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: paywave-web
+  namespace: paywave
+  labels:
+    app: paywave-web
+  annotations:
+    # Network Load Balancer in the public subnets (tagged kubernetes.io/role/elb by Terraform)
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: paywave-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
