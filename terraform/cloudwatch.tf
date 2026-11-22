@@ -56,9 +56,9 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_5xx" {
-  alarm_name          = "${local.name}-api-5xx"
-  namespace           = "AWS/ApiGateway"
-  metric_name         = "5XXError"
+  alarm_name  = "${local.name}-api-5xx"
+  namespace   = "AWS/ApiGateway"
+  metric_name = "5XXError"
   dimensions = {
     ApiName = aws_api_gateway_rest_api.this.name
     Stage   = aws_api_gateway_stage.this.stage_name

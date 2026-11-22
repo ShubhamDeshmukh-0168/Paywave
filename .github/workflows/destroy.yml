@@ -1,7 +1,7 @@
 name: Destroy PayWave
 
 # MANUAL ONLY (never runs on push). Deletes ALL AWS resources created by the deploy workflow:
-# Prometheus + Grafana, the website, EKS, the database, Lambda, API Gateway, everything.
+# Prometheus + Grafana, CloudFront, the website, EKS, the database, Lambda, API Gateway, everything.
 # Run it from Actions > Destroy PayWave > Run workflow and type DESTROY.
 on:
   workflow_dispatch:

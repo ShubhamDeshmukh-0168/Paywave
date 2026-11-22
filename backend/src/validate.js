@@ -97,7 +97,6 @@ function validateIdempotencyKey(value) {
 
 const OPERATORS = { JIO: 'Jio', AIRTEL: 'Airtel', VI: 'Vi', BSNL: 'BSNL' };
 const FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY'];
-const CARD_BRANDS = ['VISA', 'MASTERCARD', 'RUPAY', 'AMEX', 'DINERS', 'DISCOVER', 'OTHER'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Indian mobile number: 10 digits starting 6-9. Accepts +91, 91 and 0 prefixes and spaces. */
@@ -135,15 +134,29 @@ function validateFrequency(value) {
 }
 
 /** Only non-sensitive card details are accepted: the full number and CVV never reach the server. */
-function validateCard(card) {
-  if (!card || typeof card !== 'object') throw bad('Card details are required', 'INVALID_CARD');
-  const brand = typeof card.brand === 'string' ? card.brand.trim().toUpperCase() : '';
-  const kind = typeof card.kind === 'string' ? card.kind.trim().toUpperCase() : '';
-  const last4 = typeof card.last4 === 'string' ? card.last4.trim() : '';
-  if (!CARD_BRANDS.includes(brand) || !['CREDIT', 'DEBIT'].includes(kind) || !/^\d{4}$/.test(last4)) {
-    throw bad('Card details are invalid', 'INVALID_CARD');
-  }
-  return { brand, kind, last4 };
+function validateCardKind(value) {
+  const kind = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (kind !== 'DEBIT' && kind !== 'CREDIT') throw bad('Choose your debit or credit card', 'INVALID_CARD');
+  return kind;
+}
+
+function validateCvv(value) {
+  const text = typeof value === 'number' ? String(value).padStart(3, '0') : value;
+  if (typeof text !== 'string' || !/^\d{3}$/.test(text.trim())) throw bad('Enter the 3 digit CVV of the card', 'INVALID_CVV');
+  return text.trim();
+}
+
+/**
+ * Where the money comes from. Nothing or {type:'WALLET'} means the wallet (no card details needed).
+ * {type:'CARD', kind, cvv} pays with one of the user's own PayWave cards.
+ */
+function validatePaymentSource(source) {
+  if (source === undefined || source === null) return null;
+  if (typeof source !== 'object' || Array.isArray(source)) throw bad('Payment source is invalid', 'INVALID_SOURCE');
+  const type = typeof source.type === 'string' ? source.type.trim().toUpperCase() : 'WALLET';
+  if (type === 'WALLET') return null;
+  if (type !== 'CARD') throw bad('Payment source is invalid', 'INVALID_SOURCE');
+  return { kind: validateCardKind(source.kind), cvv: validateCvv(source.cvv) };
 }
 
 function validateUuid(value, label = 'id') {
@@ -172,7 +185,9 @@ module.exports = {
   normalizeTarget,
   validateOperator,
   validateFrequency,
-  validateCard,
+  validateCardKind,
+  validateCvv,
+  validatePaymentSource,
   validateUuid,
   formatInr,
   normalizeEmail,

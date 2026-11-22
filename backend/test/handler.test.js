@@ -129,7 +129,8 @@ test('lookup and transfer validate the PayWave ID before the database', async ()
 
 test('new routes require a token', async () => {
   for (const [m, path] of [['GET', '/notifications'], ['POST', '/notifications/read'], ['GET', '/autopay'], ['POST', '/autopay'],
-    ['POST', '/autopay/action'], ['POST', '/wallet/recharge'], ['POST', '/profile/mobile'], ['POST', '/profile/avatar'], ['GET', '/avatar']]) {
+    ['POST', '/autopay/action'], ['POST', '/wallet/recharge'], ['POST', '/profile/mobile'], ['POST', '/profile/avatar'], ['GET', '/avatar'],
+    ['GET', '/cards'], ['POST', '/cards/reveal'], ['POST', '/cards/status'], ['POST', '/cards/repay']]) {
     assert.equal((await call(m, path)).statusCode, 401, `${m} ${path}`);
   }
 });
@@ -142,7 +143,8 @@ test('recharge, card and AutoPay inputs are validated before the database', asyn
   assert.equal(await code('POST', '/wallet/recharge', { mobile: '123', operator: 'JIO', amount: '299' }), 'INVALID_MOBILE');
   assert.equal(await code('POST', '/wallet/recharge', { mobile: '9876543210', operator: 'XYZ', amount: '299' }), 'INVALID_OPERATOR');
   assert.equal(await code('POST', '/wallet/recharge', { mobile: '9876543210', operator: 'JIO', amount: '5' }), 'INVALID_AMOUNT');
-  assert.equal(await code('POST', '/wallet/add-money', { amount: '100', card: { brand: 'VISA', kind: 'CREDIT' } }), 'INVALID_CARD');
+  assert.equal(await code('POST', '/wallet/add-money', { amount: '0' }), 'INVALID_AMOUNT');
+  assert.equal(await code('POST', '/cards/repay', { amount: '0' }), 'INVALID_AMOUNT');
   assert.equal(await code('POST', '/autopay', { kind: 'NOPE' }), 'VALIDATION_ERROR');
   assert.equal(await code('POST', '/autopay', { kind: 'TRANSFER', frequency: 'YEARLY' }), 'INVALID_FREQUENCY');
   assert.equal(await code('POST', '/autopay', { kind: 'TRANSFER', frequency: 'DAILY', startAt: 'yesterday', amount: '10', to: '9876543210' }), 'VALIDATION_ERROR');

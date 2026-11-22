@@ -162,7 +162,7 @@
       h('div', {},
         h('span', { class: 'eyebrow' }, icon('bolt'), 'Your mobile number is your payment ID'),
         h('h1', {}, 'Pay anyone with just a ', h('em', {}, 'mobile number.')),
-        h('p', { class: 'sub' }, 'Add money from your card, send and receive in seconds, scan a QR to pay, recharge your phone and set up AutoPay. Every payment sends a notification to both people.'),
+        h('p', { class: 'sub' }, 'Add money to your wallet in one tap, send and receive in seconds, scan a QR to pay, recharge your phone and set up AutoPay. You also get your own PayWave debit and credit card. Every payment sends a notification to both people.'),
         h('div', { class: 'cta' },
           h('button', { class: 'big', type: 'button', onclick: () => focusAuth('register') }, 'Create free wallet'),
           h('button', { class: 'big secondary', type: 'button', onclick: () => focusAuth('login') }, 'Sign in')),
@@ -183,7 +183,7 @@
       h('div', { class: 'grid3' },
         ...[
           ['1', 'Sign up with your number', 'Enter your name, mobile number and email, then confirm the 6 digit code we email you.'],
-          ['2', 'Add money', 'Top up from a credit or debit card, then share your number or QR code to get paid.'],
+          ['2', 'Add money', 'Add money to your own wallet directly, no card needed, then share your number or QR code to get paid.'],
           ['3', 'Pay, scan, recharge', 'Pay a number, scan a QR, recharge a phone or schedule an AutoPay. Both sides get a notification.'],
         ].map(([n, t, d]) => h('div', { class: 'feature step' }, h('div', { class: 'num' }, n), h('h3', {}, t), h('p', {}, d)))));
 
@@ -192,7 +192,7 @@
       h('p', { class: 'lead2' }, 'Everything you need to move money, nothing you do not.'),
       h('div', { class: 'grid3' },
         feature('phone', 'Pay by mobile number', 'No account numbers or IFSC codes. Enter a number, confirm the name that appears, and pay.'),
-        feature('card', 'Credit and debit cards', 'Top up your wallet from a card. Only the card type and last 4 digits ever reach our server.'),
+        feature('card', 'Your own debit and credit card', 'Every account gets a virtual debit card and a credit card. You are only asked for card details when you choose to pay someone with a card.'),
         feature('qr', 'QR code and scanner', 'Show your QR code to get paid and scan other codes with your camera or a photo.'),
         feature('bell', 'Notifications for everyone', 'Sender and receiver get an in-app notification and an email on every payment.'),
         feature('repeat', 'AutoPay and recharge', 'Recharge any prepaid number and schedule daily, weekly or monthly payments.'),
@@ -204,7 +204,7 @@
     const faq = h('section', { class: 'band faq' },
       h('h2', {}, 'Questions'),
       ...[
-        ['Is this real money?', 'No. This is a demo wallet. Card top-ups and recharges are simulated: nothing is charged to a card and no operator is contacted.'],
+        ['Is this real money?', 'No. This is a demo wallet. Adding money, card payments and recharges are simulated: nothing is charged to a real card and no operator is contacted.'],
         ['Is my mobile number verified?', 'Not by SMS in this demo. Your email is verified with a code. Use your own number, because other people pay you by it.'],
         ['Does the scanner work on this site?', 'Taking or uploading a photo of a QR code always works. Live camera scanning needs a secure (HTTPS) address.'],
         ['What if I lose my password?', 'This demo has no password reset yet. Create a new account with another email.'],
@@ -253,8 +253,8 @@
 
     const panelHost = h('div');
     const ACTIONS = [
-      ['add', 'card', 'Add money'], ['send', 'send', 'Send'], ['scan', 'scan', 'Scan'],
-      ['qr', 'qr', 'My QR'], ['recharge', 'phone', 'Recharge'], ['autopay', 'repeat', 'AutoPay'],
+      ['add', 'plus', 'Add money'], ['send', 'send', 'Send'], ['scan', 'scan', 'Scan'],
+      ['cards', 'card', 'My cards'], ['qr', 'qr', 'My QR'], ['recharge', 'phone', 'Recharge'], ['autopay', 'repeat', 'AutoPay'],
     ];
     const actionBtns = Object.fromEntries(ACTIONS.map(([kind, ic, label]) =>
       [kind, h('button', { type: 'button', class: 'act', onclick: () => showPanel(kind) }, icon(ic), h('span', {}, label))]));
@@ -343,7 +343,7 @@
 
     // ---- panels
     const BUILDERS = {
-      add: P.buildAddPanel, send: P.buildSendPanel, scan: P.buildScanPanel, qr: P.buildQrPanel,
+      add: P.buildAddPanel, cards: P.buildCardsPanel, send: P.buildSendPanel, scan: P.buildScanPanel, qr: P.buildQrPanel,
       recharge: P.buildRechargePanel, autopay: P.buildAutopayPanel, profile: P.buildProfilePanel,
     };
     function closePanel() {
@@ -364,6 +364,7 @@
     }
     const ctx = {
       me,
+      getBalance: () => balance,
       setBalance(money) { balance = money; paintBalance(); },
       refresh() { loadTransactions(true); loadInsights(); loadContacts(); poll(true); },
       closePanel,
@@ -466,6 +467,11 @@
         ic = credit ? 'down' : 'up';
         extra.push(spacedMobile(t.counterparty.mobile) || spacedId(t.counterparty.payId), t.note);
         if (d.autopay) extra.push('AutoPay');
+        if (d.method === 'CARD' && d.last4) extra.push(`${d.kind === 'CREDIT' ? 'Credit' : 'Debit'} card •••• ${d.last4}`);
+      } else if (t.type === 'CARD_BILL') {
+        title = `Credit card bill •••• ${d.last4 || ''}`.trim();
+        ic = 'card';
+        extra.push('Paid from wallet');
       } else if (t.type === 'RECHARGE') {
         title = `Recharge · ${OP[d.operator] || ''} ${spacedMobile(d.mobile || '')}`.trim();
         ic = 'phone';

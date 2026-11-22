@@ -1,3 +1,5 @@
+# NodePort, not LoadBalancer: nothing public is created by Kubernetes. Traffic comes from CloudFront through the
+# Terraform-managed NLB (terraform/cloudfront.tf), which forwards to port 30080 on every node.
 apiVersion: v1
 kind: Service
 metadata:
@@ -5,15 +7,12 @@ metadata:
   namespace: paywave
   labels:
     app: paywave-web
-  annotations:
-    # Network Load Balancer in the public subnets (tagged kubernetes.io/role/elb by Terraform)
-    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: paywave-web
   ports:
     - name: http
       port: 80
       targetPort: http
+      nodePort: 30080 # keep in sync with local.web_node_port in terraform/cloudfront.tf

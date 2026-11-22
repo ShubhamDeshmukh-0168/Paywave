@@ -96,10 +96,19 @@ test('operator, frequency, card validators', () => {
   assert.throws(() => v.validateOperator('tata'), { code: 'INVALID_OPERATOR' });
   assert.equal(v.validateFrequency('weekly'), 'WEEKLY');
   assert.throws(() => v.validateFrequency('hourly'), { code: 'INVALID_FREQUENCY' });
-  assert.deepEqual(v.validateCard({ brand: 'visa', kind: 'debit', last4: '4242', number: '4242424242424242' }), { brand: 'VISA', kind: 'DEBIT', last4: '4242' });
-  for (const bad of [null, {}, { brand: 'VISA', kind: 'DEBIT', last4: '42' }, { brand: 'FOO', kind: 'DEBIT', last4: '4242' }, { brand: 'VISA', kind: 'GIFT', last4: '4242' }]) {
-    assert.throws(() => v.validateCard(bad), { code: 'INVALID_CARD' });
-  }
+});
+
+test('payment source: wallet needs nothing, a card needs its kind and CVV', () => {
+  assert.equal(v.validatePaymentSource(undefined), null);
+  assert.equal(v.validatePaymentSource(null), null);
+  assert.equal(v.validatePaymentSource({ type: 'wallet' }), null);
+  assert.deepEqual(v.validatePaymentSource({ type: 'card', kind: 'credit', cvv: '123' }), { kind: 'CREDIT', cvv: '123' });
+  assert.deepEqual(v.validatePaymentSource({ type: 'CARD', kind: 'DEBIT', cvv: 7 }), { kind: 'DEBIT', cvv: '007' });
+  assert.throws(() => v.validatePaymentSource({ type: 'CARD', kind: 'DEBIT' }), { code: 'INVALID_CVV' });
+  assert.throws(() => v.validatePaymentSource({ type: 'CARD', kind: 'DEBIT', cvv: '12' }), { code: 'INVALID_CVV' });
+  assert.throws(() => v.validatePaymentSource({ type: 'CARD', kind: 'GIFT', cvv: '123' }), { code: 'INVALID_CARD' });
+  assert.throws(() => v.validatePaymentSource({ type: 'BITCOIN' }), { code: 'INVALID_SOURCE' });
+  assert.throws(() => v.validatePaymentSource('card'), { code: 'INVALID_SOURCE' });
 });
 
 test('formatInr uses Indian grouping', () => {

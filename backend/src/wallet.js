@@ -3,6 +3,7 @@
 const db = require('./db');
 const v = require('./validate');
 const notify = require('./notify');
+const cards = require('./cards');
 const { HttpError } = require('./http');
 
 const TOPUP_MIN = 100; // Rs 1.00
@@ -16,6 +17,8 @@ const money = (paise) => ({ paise: Number(paise), display: v.formatPaise(paise) 
 const ref = (txId) => txId.slice(0, 8).toUpperCase();
 const maskMobile = (m) => `${m.slice(0, 2)}XXXXX${m.slice(-3)}`;
 const cardLabel = (c) => `${c.kind === 'CREDIT' ? 'credit' : 'debit'} card ending ${c.last4}`;
+const BILL_MIN = 100; // Rs 1.00
+const BILL_MAX = 5_000_000; // Rs 50,000.00
 
 async function getMe(userId) {
   const { rows } = await db.query(
@@ -126,29 +129,46 @@ async function debitWallet(client, userId, amount, lockIds) {
  * Moves money between two wallets inside an open transaction and notifies both people.
  * Also used by AutoPay. `recipient` is a row from findRecipient().
  */
-async function transferCore(client, { fromId, recipient, amount, note, key, meta, outbox }) {
+async function transferCore(client, { fromId, recipient, amount, note, key, meta, outbox, card }) {
   if (recipient.id === fromId) throw new HttpError(400, 'SELF_TRANSFER', 'You cannot send money to yourself');
 
-  const balance = await debitWallet(client, fromId, amount, [fromId, recipient.id]);
+  // Paying with a card: lock the card row first (always before any wallet row, so no deadlocks).
+  // A debit card spends the wallet balance; a credit card spends the credit limit and the bill is paid later.
+  let balance;
+  let cardRow = null;
+  if (card) {
+    cardRow = await cards.lockCard(client, card.id);
+    if (cardRow.kind === 'CREDIT') {
+      const available = Number(cardRow.credit_limit_paise) - Number(cardRow.outstanding_paise);
+      if (amount > available) {
+        throw new HttpError(422, 'CREDIT_LIMIT_EXCEEDED', `Not enough credit limit on your credit card (available ${v.formatInr(available)})`);
+      }
+      await client.query('UPDATE cards SET outstanding_paise = outstanding_paise + $2 WHERE id = $1', [card.id, amount]);
+      balance = await currentBalance(client, fromId);
+    }
+  }
+  if (balance === undefined) balance = await debitWallet(client, fromId, amount, [fromId, recipient.id]);
   await client.query(
     'UPDATE wallets SET balance_paise = balance_paise + $2, updated_at = now() WHERE user_id = $1',
     [recipient.id, amount],
   );
+  const fullMeta = card ? { ...(meta || {}), method: 'CARD', kind: card.kind, last4: card.last4 } : meta;
   const ins = await client.query(
     `INSERT INTO transactions (type, from_user, to_user, initiated_by, amount_paise, note, idempotency_key, meta)
      VALUES ('TRANSFER', $1, $2, $1, $3, $4, $5, $6)
      RETURNING id, created_at`,
-    [fromId, recipient.id, amount, note, key || null, meta ? JSON.stringify(meta) : null],
+    [fromId, recipient.id, amount, note, key || null, fullMeta ? JSON.stringify(fullMeta) : null],
   );
   const txId = ins.rows[0].id;
   const sender = (await client.query('SELECT full_name, email, mobile FROM users WHERE id = $1', [fromId])).rows[0];
   const amountText = v.formatInr(amount);
   const auto = meta && meta.autopay ? ' (AutoPay)' : '';
+  const via = card ? `Paid with ${cardLabel(card)}` : null;
 
   await notify.create(client, fromId, {
     kind: 'PAYMENT_SENT',
     title: `Paid ${amountText} to ${recipient.full_name}${auto}`,
-    body: [note, `Ref ${ref(txId)}`].filter(Boolean).join(' · '),
+    body: [note, via, `Ref ${ref(txId)}`].filter(Boolean).join(' · '),
     txId,
   });
   await notify.create(client, recipient.id, {
@@ -161,7 +181,7 @@ async function transferCore(client, { fromId, recipient, amount, note, key, meta
     to: sender.email,
     name: sender.full_name,
     subject: `You paid ${amountText} to ${recipient.full_name}`,
-    lines: [note && `Note: ${note}`, `Reference: ${ref(txId)}`, `Balance: ${v.formatInr(balance)}`],
+    lines: [note && `Note: ${note}`, via, `Reference: ${ref(txId)}`, `Balance: ${v.formatInr(balance)}`],
   });
   notify.queueEmail(outbox, {
     to: recipient.email,
@@ -170,7 +190,10 @@ async function transferCore(client, { fromId, recipient, amount, note, key, meta
     lines: [note && `Note: ${note}`, `Reference: ${ref(txId)}`],
   });
 
-  return { transactionId: txId, balance, createdAt: ins.rows[0].created_at };
+  const creditAvailable = cardRow && cardRow.kind === 'CREDIT'
+    ? Number(cardRow.credit_limit_paise) - Number(cardRow.outstanding_paise) - amount
+    : null;
+  return { transactionId: txId, balance, createdAt: ins.rows[0].created_at, creditAvailable };
 }
 
 /** Accepts `to` (mobile number, PayWave ID or email) plus the older toMobile/toPayId/toEmail fields. */
@@ -185,33 +208,36 @@ async function transfer(userId, body, idempotencyKey) {
   const amount = v.parseAmountToPaise(body.amount, { minPaise: TRANSFER_MIN, maxPaise: TRANSFER_MAX });
   const note = v.validateNote(body.note);
   const key = v.validateIdempotencyKey(idempotencyKey);
+  // Card details are asked for only when the sender chooses to pay with a card; the wallet needs none
+  const source = v.validatePaymentSource(body.source);
+  const card = source ? await cards.verifyCvv(userId, source.kind, source.cvv) : null;
 
   return runMoney(userId, key, async (client, outbox) => {
     const recipient = await findRecipient(client, target);
-    const r = await transferCore(client, { fromId: userId, recipient, amount, note, key, outbox });
+    const r = await transferCore(client, { fromId: userId, recipient, amount, note, key, outbox, card });
     return {
       transactionId: r.transactionId,
       amount: money(amount),
       balance: money(r.balance),
       to: { fullName: recipient.full_name, mobile: recipient.mobile, payId: recipient.pay_id },
       note,
+      paidWith: card ? { kind: card.kind, last4: card.last4, creditAvailable: r.creditAvailable === null ? undefined : money(r.creditAvailable) } : { kind: 'WALLET' },
       createdAt: r.createdAt,
       replayed: false,
     };
   });
 }
 
-// ---------------------------------------------------------------- add money (card)
+// ---------------------------------------------------------------- add money (own wallet)
 /**
- * Simulated top-up. There is no payment gateway here: the browser sends only the card brand,
- * the last 4 digits and credit/debit, never the full number or CVV. A real product would credit
- * the wallet only after a gateway (Razorpay, Stripe, ...) confirms the payment by signed webhook.
+ * Adds money to the user's own wallet directly: no card is asked for. This is a demo wallet, so the
+ * funds are simulated. A real product would credit the wallet only after a payment gateway (UPI,
+ * Razorpay, Stripe, ...) confirms the payment by signed webhook.
  */
 async function addMoney(userId, body, idempotencyKey) {
   const amount = v.parseAmountToPaise(body.amount, { minPaise: TOPUP_MIN, maxPaise: TOPUP_MAX });
   const key = v.validateIdempotencyKey(idempotencyKey);
-  const card = body.card === undefined || body.card === null ? null : v.validateCard(body.card);
-  const meta = card ? { method: 'CARD', brand: card.brand, kind: card.kind, last4: card.last4 } : { method: 'DEMO' };
+  const meta = { method: 'DEMO' };
 
   return runMoney(userId, key, async (client, outbox) => {
     const upd = await client.query(
@@ -228,23 +254,72 @@ async function addMoney(userId, body, idempotencyKey) {
     );
     const txId = ins.rows[0].id;
     const user = (await client.query('SELECT full_name, email FROM users WHERE id = $1', [userId])).rows[0];
-    const via = card ? ` using your ${cardLabel(card)}` : '';
     await notify.create(client, userId, {
       kind: 'WALLET_TOPUP',
       title: `${v.formatInr(amount)} added to your wallet`,
-      body: `${card ? `Paid with ${cardLabel(card)} · ` : ''}Ref ${ref(txId)}`,
+      body: `Ref ${ref(txId)}`,
       txId,
     });
     notify.queueEmail(outbox, {
       to: user.email,
       name: user.full_name,
-      subject: `${v.formatInr(amount)} added to your wallet${via}`,
+      subject: `${v.formatInr(amount)} added to your wallet`,
       lines: [`Reference: ${ref(txId)}`, `Balance: ${v.formatInr(upd.rows[0].balance_paise)}`],
     });
     return {
       transactionId: txId,
       amount: money(amount),
       balance: money(upd.rows[0].balance_paise),
+      createdAt: ins.rows[0].created_at,
+      replayed: false,
+    };
+  });
+}
+
+// ---------------------------------------------------------------- pay the credit card bill
+/** Pays (part of) the credit card bill from the wallet. */
+async function repayCard(userId, body, idempotencyKey) {
+  const amount = v.parseAmountToPaise(body.amount, { minPaise: BILL_MIN, maxPaise: BILL_MAX });
+  const key = v.validateIdempotencyKey(idempotencyKey);
+
+  return runMoney(userId, key, async (client, outbox) => {
+    // Card row first, then the wallet (same order as card payments)
+    const card = (await client.query(
+      "SELECT id, last4, outstanding_paise FROM cards WHERE user_id = $1 AND kind = 'CREDIT' FOR UPDATE",
+      [userId],
+    )).rows[0];
+    if (!card) throw new HttpError(404, 'CARD_NOT_FOUND', 'Card not found');
+    const due = Number(card.outstanding_paise);
+    if (due === 0) throw new HttpError(422, 'NOTHING_DUE', 'Your credit card bill is already paid');
+    if (amount > due) throw new HttpError(422, 'AMOUNT_TOO_HIGH', `You only owe ${v.formatInr(due)} on this card`);
+
+    const balance = await debitWallet(client, userId, amount);
+    await client.query('UPDATE cards SET outstanding_paise = outstanding_paise - $2 WHERE id = $1', [card.id, amount]);
+    const ins = await client.query(
+      `INSERT INTO transactions (type, from_user, initiated_by, amount_paise, note, idempotency_key, meta)
+       VALUES ('CARD_BILL', $1, $1, $2, $3, $4, $5)
+       RETURNING id, created_at`,
+      [userId, amount, `Credit card bill ending ${card.last4}`, key, JSON.stringify({ kind: 'CREDIT', last4: card.last4 })],
+    );
+    const txId = ins.rows[0].id;
+    const user = (await client.query('SELECT full_name, email FROM users WHERE id = $1', [userId])).rows[0];
+    await notify.create(client, userId, {
+      kind: 'CARD_BILL',
+      title: `Paid ${v.formatInr(amount)} towards your credit card`,
+      body: `Card ending ${card.last4} · Ref ${ref(txId)}`,
+      txId,
+    });
+    notify.queueEmail(outbox, {
+      to: user.email,
+      name: user.full_name,
+      subject: `Credit card payment of ${v.formatInr(amount)} received`,
+      lines: [`Card ending ${card.last4}`, `Still due: ${v.formatInr(due - amount)}`, `Reference: ${ref(txId)}`, `Wallet balance: ${v.formatInr(balance)}`],
+    });
+    return {
+      transactionId: txId,
+      amount: money(amount),
+      balance: money(balance),
+      card: { last4: card.last4, outstanding: money(due - amount) },
       createdAt: ins.rows[0].created_at,
       replayed: false,
     };
@@ -428,6 +503,7 @@ async function contacts(userId) {
 module.exports = {
   getMe,
   addMoney,
+  repayCard,
   transfer,
   recharge,
   lookup,

@@ -23,6 +23,7 @@ spec:
       annotations:
         # Changes when the payments URL changes, which forces a rollout with the new config
         paywave/config-hash: "${CONFIG_HASH}"
+        paywave/origin-hash: "${ORIGIN_HASH}"
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -73,7 +74,15 @@ spec:
               mountPath: /usr/share/nginx/html/config.js
               subPath: config.js
               readOnly: true
+            # Requires the secret X-Origin-Verify header that only CloudFront sends (see frontend/nginx.conf)
+            - name: origin-verify
+              mountPath: /etc/nginx/conf.d/00-origin.conf
+              subPath: 00-origin.conf
+              readOnly: true
       volumes:
         - name: runtime-config
           configMap:
             name: paywave-web-config
+        - name: origin-verify
+          secret:
+            secretName: paywave-web-origin

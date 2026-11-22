@@ -7,6 +7,7 @@ const log = require('./log');
 const { HttpError, getHeader } = require('./http');
 const { sendOtpEmail } = require('./mailer');
 const { getAppConfig } = require('./secrets');
+const cards = require('./cards');
 
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 10);
 const MAX_OTP_ATTEMPTS = 5;
@@ -168,7 +169,43 @@ async function verifyOtp(body) {
     throw err;
   }
 
+  // The new account gets its debit and credit card now. Never blocks sign-up: cards are also issued on first use.
+  try {
+    await cards.ensureCards(user.id);
+  } catch (err) {
+    log('warn', 'card issue failed', { error: err.message });
+  }
+
   return sessionFor(user, cfg.jwt_secret);
+}
+
+/** Counts a wrong password and locks the account for a while after too many in a row. */
+async function recordFailedAttempt(userId) {
+  await db.query(
+    `UPDATE users
+        SET locked_until = CASE WHEN failed_login_attempts + 1 >= $2
+                                THEN now() + make_interval(mins => $3::int) ELSE locked_until END,
+            failed_login_attempts = CASE WHEN failed_login_attempts + 1 >= $2
+                                         THEN 0 ELSE failed_login_attempts + 1 END
+      WHERE id = $1`,
+    [userId, MAX_LOGIN_FAILURES, LOCK_MINUTES],
+  );
+}
+
+/** Re-checks the signed-in user's password before showing card details. Shares the login lockout. */
+async function confirmPassword(userId, password) {
+  if (typeof password !== 'string' || password.length === 0 || password.length > 128) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Enter your password to continue');
+  }
+  const user = (await db.query('SELECT id, password_hash, locked_until FROM users WHERE id = $1', [userId])).rows[0];
+  if (!user) throw new HttpError(401, 'UNAUTHORIZED', 'Account not found');
+  if (user.locked_until && user.locked_until.getTime() > Date.now()) {
+    throw new HttpError(429, 'ACCOUNT_LOCKED', 'Too many failed attempts. Try again in a few minutes.');
+  }
+  if (!(await c.verifyPassword(password, user.password_hash))) {
+    await recordFailedAttempt(user.id);
+    throw new HttpError(403, 'INVALID_PASSWORD', 'Incorrect password');
+  }
 }
 
 async function login(body) {
@@ -196,15 +233,7 @@ async function login(body) {
 
   const ok = await c.verifyPassword(body.password, user.password_hash);
   if (!ok) {
-    await db.query(
-      `UPDATE users
-          SET locked_until = CASE WHEN failed_login_attempts + 1 >= $2
-                                  THEN now() + make_interval(mins => $3::int) ELSE locked_until END,
-              failed_login_attempts = CASE WHEN failed_login_attempts + 1 >= $2
-                                           THEN 0 ELSE failed_login_attempts + 1 END
-        WHERE id = $1`,
-      [user.id, MAX_LOGIN_FAILURES, LOCK_MINUTES],
-    );
+    await recordFailedAttempt(user.id);
     throw invalid;
   }
 
@@ -229,4 +258,4 @@ async function authenticate(event) {
   return { id: claims.sub, email: claims.email };
 }
 
-module.exports = { register, resendOtp, verifyOtp, login, authenticate };
+module.exports = { register, resendOtp, verifyOtp, login, authenticate, confirmPassword };

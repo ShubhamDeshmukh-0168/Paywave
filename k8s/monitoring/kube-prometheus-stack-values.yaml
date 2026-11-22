@@ -1,5 +1,5 @@
 # Helm values for kube-prometheus-stack: Prometheus + Grafana + node-exporter + kube-state-metrics.
-# scripts/deploy-monitoring.sh fills ${AWS_REGION}, ${GRAFANA_ROLE_ARN}, ${GRAFANA_ALLOWED_CIDR} with envsubst.
+# scripts/deploy-monitoring.sh fills ${AWS_REGION}, ${GRAFANA_ROLE_ARN}, ${GRAFANA_DOMAIN} with envsubst.
 
 # Alertmanager is off: CloudWatch alarms already email you (terraform/cloudwatch.tf). The Prometheus
 # alert rules (k8s/monitoring/rules.yaml) still show up in Grafana > Alerting > Alert rules.
@@ -72,13 +72,20 @@ grafana:
     annotations:
       eks.amazonaws.com/role-arn: "${GRAFANA_ROLE_ARN}"
 
+  # No public load balancer: Grafana is only reachable inside the cluster. The web pods' nginx proxies
+  # https://<cloudfront>/grafana/ to this Service (see frontend/nginx.conf).
   service:
-    type: LoadBalancer
+    type: ClusterIP
     port: 80
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    loadBalancerSourceRanges:
-      - "${GRAFANA_ALLOWED_CIDR}"
+
+  grafana.ini:
+    server:
+      root_url: "https://${GRAFANA_DOMAIN}/grafana/"
+      serve_from_sub_path: true
+    security:
+      cookie_secure: true
+    live:
+      max_connections: 0 # Grafana Live uses WebSockets, which are not needed here
 
   # Loads every ConfigMap labelled grafana_dashboard=1 (the PayWave dashboards) from any namespace
   sidecar:

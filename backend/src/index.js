@@ -4,6 +4,7 @@ const { HttpError, json, empty, errorBody, getHeader, parseBody } = require('./h
 const log = require('./log');
 const auth = require('./auth');
 const wallet = require('./wallet');
+const cards = require('./cards');
 const db = require('./db');
 const profile = require('./profile');
 const autopay = require('./autopay');
@@ -53,6 +54,30 @@ const routes = {
   'GET /lookup': { auth: true, handler: async (ctx) => [200, await wallet.lookup(ctx.user.id, ctx.query)] },
   'GET /insights': { auth: true, handler: async (ctx) => [200, await wallet.insights(ctx.user.id)] },
   'GET /contacts': { auth: true, handler: async (ctx) => [200, await wallet.contacts(ctx.user.id)] },
+
+  // PayWave virtual cards. Showing details and unfreezing need the password again.
+  'GET /cards': { auth: true, handler: async (ctx) => [200, await cards.list(ctx.user.id)] },
+  'POST /cards/reveal': {
+    auth: true,
+    handler: async (ctx) => {
+      const body = ctx.body();
+      await auth.confirmPassword(ctx.user.id, body.password);
+      return [200, await cards.reveal(ctx.user.id, body)];
+    },
+  },
+  'POST /cards/status': {
+    auth: true,
+    handler: async (ctx) => {
+      const body = ctx.body();
+      if (body.frozen === false) await auth.confirmPassword(ctx.user.id, body.password);
+      return [200, await cards.setStatus(ctx.user.id, body)];
+    },
+  },
+  'POST /cards/repay': {
+    scope: 'payments',
+    auth: true,
+    handler: async (ctx) => [201, await wallet.repayCard(ctx.user.id, ctx.body(), ctx.idempotencyKey)],
+  },
 
   'POST /wallet/recharge': {
     scope: 'payments',

@@ -105,7 +105,57 @@ function generatePayId() {
   return id;
 }
 
+// ------------------------------------------------------------------ card data
+// Card numbers and CVVs are encrypted at rest with AES-256-GCM. The key is derived (HKDF) from the
+// application secret, so a copy of the database alone does not reveal them.
+function cardKey(secret) {
+  return Buffer.from(crypto.hkdfSync('sha256', String(secret), 'paywave', 'card-encryption-v1', 32));
+}
+
+function encryptField(secret, plaintext) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', cardKey(secret), iv);
+  const enc = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), enc].map((b) => b.toString('base64')).join('.');
+}
+
+function decryptField(secret, token) {
+  const [iv, tag, enc] = String(token).split('.').map((p) => Buffer.from(p, 'base64'));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', cardKey(secret), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+}
+
+/** Luhn check digit for a numeric string (so the generated card numbers pass normal card validation). */
+function luhnDigit(partial) {
+  let sum = 0;
+  let dbl = true; // the check digit will sit to the right, so the rightmost partial digit is doubled
+  for (let i = partial.length - 1; i >= 0; i -= 1) {
+    let d = Number(partial[i]);
+    if (dbl) { d *= 2; if (d > 9) d -= 9; }
+    sum += d;
+    dbl = !dbl;
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
+/** 16 digit card number: `prefix` + random digits + Luhn check digit. */
+function generateCardNumber(prefix) {
+  let body = prefix;
+  while (body.length < 15) body += String(crypto.randomInt(10));
+  return body + luhnDigit(body);
+}
+
+function generateCvv() {
+  return String(crypto.randomInt(0, 1000)).padStart(3, '0');
+}
+
 module.exports = {
+  encryptField,
+  decryptField,
+  luhnDigit,
+  generateCardNumber,
+  generateCvv,
   generatePayId,
   hashPassword,
   verifyPassword,

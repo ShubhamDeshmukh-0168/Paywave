@@ -121,7 +121,12 @@ jobs:
             echo "DB_SECRET_ARN=$(terraform output -raw db_secret_arn)"
             echo "APP_SECRET_ARN=$(terraform output -raw app_secret_arn)"
             echo "GRAFANA_ROLE_ARN=$(terraform output -raw grafana_role_arn)"
+            echo "CLOUDFRONT_DOMAIN=$(terraform output -raw cloudfront_domain)"
           } >> "$GITHUB_ENV"
+          # secret header value shared by CloudFront and nginx: keep it out of the logs
+          ORIGIN_VERIFY="$(terraform output -raw origin_verify_secret)"
+          echo "::add-mask::${ORIGIN_VERIFY}"
+          echo "ORIGIN_VERIFY=${ORIGIN_VERIFY}" >> "$GITHUB_ENV"
 
       - name: Build and push the web and API images to ECR
         run: |
@@ -166,16 +171,17 @@ jobs:
           done
           echo "::error::Payments API (Lambda) health check failed"; exit 1
 
-      - name: Smoke test the website
+      - name: Smoke test the website (through CloudFront)
         run: |
-          URL="http://${{ steps.k8s.outputs.web_host }}"
-          # a new load balancer needs a few minutes before DNS and targets are ready
-          for i in $(seq 1 40); do
+          URL="https://${CLOUDFRONT_DOMAIN}"
+          # A new CloudFront distribution needs a few minutes to roll out to the edge locations, and the
+          # load balancer needs a moment to see healthy nodes. Retry for up to 20 minutes.
+          for i in $(seq 1 80); do
             if curl -fsS --max-time 10 "${URL}/healthz" && curl -fsS --max-time 20 "${URL}/api/health?deep=1"; then
               {
                 echo "## PayWave is live"
                 echo ""
-                echo "- Website: ${URL}"
+                echo "- **App: ${URL}**"
                 echo "- Payments API (Lambda): ${API_URL}"
                 echo "- API service (Kubernetes): ${URL}/api/health"
                 if [ -z "${{ secrets.SMTP_HOST }}" ]; then
@@ -183,12 +189,12 @@ jobs:
                 fi
                 echo "- CloudWatch dashboard: https://${AWS_REGION}.console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}#dashboards/dashboard/${PROJECT_NAME}-${ENVIRONMENT}"
               } >> "$GITHUB_STEP_SUMMARY"
-              echo "Website is up: ${URL}"
+              echo "App is up: ${URL}"
               exit 0
             fi
-            echo "Website not ready yet (attempt $i)"; sleep 15
+            echo "Not ready yet (attempt $i)"; sleep 15
           done
-          echo "::error::Website health check failed"; exit 1
+          echo "::error::The app did not become reachable through CloudFront in 20 minutes"; exit 1
 
       # The app is already live and smoke tested at this point. Monitoring is an extra: if it
       # fails the run stays green and shows a warning (check the step log), instead of failing the deploy.
@@ -197,7 +203,6 @@ jobs:
         continue-on-error: true
         env:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          GRAFANA_ALLOWED_CIDR: ${{ vars.GRAFANA_ALLOWED_CIDR }}
           KPS_VERSION: ${{ vars.KPS_VERSION }}
         run: bash scripts/deploy-monitoring.sh
 
@@ -209,14 +214,14 @@ jobs:
       - name: Monitoring summary
         if: ${{ steps.monitoring.outcome == 'success' }}
         env:
-          GRAFANA_HOST: ${{ steps.monitoring.outputs.grafana_host }}
+          GRAFANA_URL: ${{ steps.monitoring.outputs.grafana_url }}
           PASSWORD_SET: ${{ secrets.GRAFANA_ADMIN_PASSWORD != '' }}
         run: |
           {
             echo ""
             echo "## Monitoring"
             echo ""
-            echo "- Grafana: http://${GRAFANA_HOST} (user \`admin\`)"
+            echo "- Grafana: ${GRAFANA_URL} (user \`admin\`)"
             echo "- Dashboards: *PayWave API (Kubernetes)*, *PayWave AWS (Lambda, API Gateway, RDS)*, plus the built-in Kubernetes dashboards"
             if [ "$PASSWORD_SET" != "true" ]; then
               echo "- No GRAFANA_ADMIN_PASSWORD secret is set, so a password was generated. Get it with: \`kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d\`"

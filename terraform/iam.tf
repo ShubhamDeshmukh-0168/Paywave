@@ -23,8 +23,8 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
 # Least privilege: read exactly the two secrets the function needs
 data "aws_iam_policy_document" "lambda_secrets" {
   statement {
-    sid       = "ReadAppSecrets"
-    actions   = ["secretsmanager:GetSecretValue"]
+    sid     = "ReadAppSecrets"
+    actions = ["secretsmanager:GetSecretValue"]
     resources = [
       aws_secretsmanager_secret.app.arn,
       aws_db_instance.this.master_user_secret[0].secret_arn,

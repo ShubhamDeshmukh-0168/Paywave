@@ -70,3 +70,14 @@ output "grafana_role_arn" {
   description = "IAM role the Grafana pod assumes (IRSA) to read CloudWatch"
   value       = aws_iam_role.grafana.arn
 }
+
+output "cloudfront_domain" {
+  description = "Address of the app: https://<this>"
+  value       = aws_cloudfront_distribution.web.domain_name
+}
+
+output "origin_verify_secret" {
+  description = "Secret header value CloudFront sends and nginx requires (keeps the NLB from being used directly)"
+  value       = random_password.origin_verify.result
+  sensitive   = true
+}

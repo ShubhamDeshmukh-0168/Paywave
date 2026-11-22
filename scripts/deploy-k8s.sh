@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Deploys the API service and the web app to EKS and waits until the public load balancer exists.
+# Deploys the API service and the web app to EKS. The site is reached through CloudFront (Terraform),
+# so Kubernetes creates no public load balancer: the web Service is a NodePort.
 # Required env: IMAGE (web), API_IMAGE, PAYMENTS_API_URL, API_POD_ROLE_ARN, DB_HOST, DB_USER, DB_NAME,
-#               DB_SECRET_ARN, APP_SECRET_ARN, CLUSTER_NAME, AWS_REGION
+#               DB_SECRET_ARN, APP_SECRET_ARN, CLUSTER_NAME, AWS_REGION,
+#               CLOUDFRONT_DOMAIN, ORIGIN_VERIFY (the secret header value CloudFront sends)
 # Optional: LOG_OTP_WITHOUT_SMTP (true/false)
 set -euo pipefail
 
@@ -16,6 +18,8 @@ set -euo pipefail
 : "${APP_SECRET_ARN:?APP_SECRET_ARN is required}"
 : "${CLUSTER_NAME:?CLUSTER_NAME is required}"
 : "${AWS_REGION:?AWS_REGION is required}"
+: "${CLOUDFRONT_DOMAIN:?CLOUDFRONT_DOMAIN is required}"
+: "${ORIGIN_VERIFY:?ORIGIN_VERIFY is required}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -26,10 +30,11 @@ kubectl wait --for=condition=Ready nodes --all --timeout=600s
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
 CONFIG_HASH="$(printf '%s' "$PAYMENTS_API_URL" | sha256sum | cut -c1-16)"
+ORIGIN_HASH="$(printf '%s' "$ORIGIN_VERIFY" | sha256sum | cut -c1-16)"
 LOG_OTP_WITHOUT_SMTP="${LOG_OTP_WITHOUT_SMTP:-false}"
-export IMAGE API_IMAGE PAYMENTS_API_URL API_POD_ROLE_ARN DB_HOST DB_USER DB_NAME DB_SECRET_ARN APP_SECRET_ARN AWS_REGION CONFIG_HASH LOG_OTP_WITHOUT_SMTP
+export IMAGE API_IMAGE PAYMENTS_API_URL API_POD_ROLE_ARN DB_HOST DB_USER DB_NAME DB_SECRET_ARN APP_SECRET_ARN AWS_REGION CONFIG_HASH ORIGIN_HASH LOG_OTP_WITHOUT_SMTP
 # shellcheck disable=SC2016 # the single quotes are intentional: envsubst needs the literal ${NAMES}
-VARS='${IMAGE} ${API_IMAGE} ${PAYMENTS_API_URL} ${API_POD_ROLE_ARN} ${DB_HOST} ${DB_USER} ${DB_NAME} ${DB_SECRET_ARN} ${APP_SECRET_ARN} ${AWS_REGION} ${CONFIG_HASH} ${LOG_OTP_WITHOUT_SMTP}'
+VARS='${IMAGE} ${API_IMAGE} ${PAYMENTS_API_URL} ${API_POD_ROLE_ARN} ${DB_HOST} ${DB_USER} ${DB_NAME} ${DB_SECRET_ARN} ${APP_SECRET_ARN} ${AWS_REGION} ${CONFIG_HASH} ${ORIGIN_HASH} ${LOG_OTP_WITHOUT_SMTP}'
 
 # The API goes first: the web pods' nginx resolves the paywave-api Service name when it starts
 envsubst "$VARS" < "$ROOT/k8s/namespace.yaml" | kubectl apply -f -
@@ -40,23 +45,24 @@ if ! kubectl -n paywave rollout status deployment/paywave-api --timeout=420s; th
   exit 1
 fi
 
+# nginx only accepts requests that carry CloudFront's secret header (plus the /healthz health checks).
+# This Secret replaces conf.d/00-origin.conf inside the web pods. The secret is alphanumeric, so it is safe in a regex.
+ORIGIN_CONF="$(cat <<EOF
+map "\$uri|\$http_x_origin_verify" \$pw_origin_ok {
+  default 0;
+  "~^/healthz\\|" 1;
+  "~^[^|]*\\|${ORIGIN_VERIFY}\$" 1;
+}
+EOF
+)"
+kubectl -n paywave create secret generic paywave-web-origin \
+  --from-literal=00-origin.conf="$ORIGIN_CONF" --dry-run=client -o yaml | kubectl apply -f -
+
 for manifest in configmap deployment service hpa pdb; do
   envsubst "$VARS" < "$ROOT/k8s/${manifest}.yaml" | kubectl apply -f -
 done
 
 kubectl -n paywave rollout status deployment/paywave-web --timeout=300s
 
-HOST=""
-for _ in $(seq 1 60); do
-  HOST="$(kubectl -n paywave get svc paywave-web -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
-  [ -n "$HOST" ] && break
-  sleep 10
-done
-if [ -z "$HOST" ]; then
-  echo "The load balancer did not get an address in 10 minutes" >&2
-  kubectl -n paywave describe svc paywave-web >&2 || true
-  exit 1
-fi
-
-echo "web_host=$HOST" >> "${GITHUB_OUTPUT:-/dev/null}"
-echo "Load balancer: $HOST"
+echo "web_url=https://$CLOUDFRONT_DOMAIN" >> "${GITHUB_OUTPUT:-/dev/null}"
+echo "App address (CloudFront): https://$CLOUDFRONT_DOMAIN"

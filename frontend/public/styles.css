@@ -418,3 +418,51 @@ button.icon-only { padding: 8px; }
   .row2 { grid-template-columns: 1fr 1fr; }
   .balance .actions .act { font-size: 12px; }
 }
+
+/* ------------------------------------------------------------------ add money + cards + pay with */
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.paywith { display: grid; gap: 8px; margin-top: 6px; }
+.paywith .src {
+  display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+  background: var(--card-2); color: var(--text); border: 1.5px solid var(--input-line); padding: 12px 14px; border-radius: 14px;
+}
+.paywith .src span { display: grid; gap: 2px; }
+.paywith .src small { color: var(--muted); font-weight: 500; }
+.paywith .src.on { border-color: var(--cyan); background: rgba(0, 186, 242, 0.1); }
+.paywith .src:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.cards-list { display: grid; gap: 22px; }
+.card-block { display: grid; gap: 10px; }
+.vcard {
+  position: relative; color: #fff; border-radius: 18px; padding: 18px 20px; min-height: 178px;
+  display: grid; align-content: space-between; gap: 14px; overflow: hidden;
+  box-shadow: 0 10px 28px rgba(0, 46, 110, 0.28);
+}
+.vcard::after {
+  content: ''; position: absolute; width: 220px; height: 220px; right: -70px; top: -90px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+.vcard.debit { background: linear-gradient(135deg, #002e6e, #0a4aa8 60%, #00baf2); }
+.vcard.credit { background: linear-gradient(135deg, #1b1f3a, #5b2a86 60%, #c2398f); }
+.vcard.frozen { filter: grayscale(0.85) brightness(0.8); }
+.vc-top { display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
+.vc-brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+.vc-kind { font-size: 12px; letter-spacing: 2px; opacity: 0.9; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 999px; padding: 3px 10px; }
+.vc-num { font-size: clamp(17px, 4.6vw, 22px); letter-spacing: 2px; position: relative; z-index: 1; word-spacing: 4px; }
+.vc-bottom { display: flex; gap: 18px; flex-wrap: wrap; position: relative; z-index: 1; }
+.vc-bottom small { display: block; font-size: 9px; letter-spacing: 1.5px; opacity: 0.75; }
+.vc-bottom b { font-size: 13px; letter-spacing: 0.5px; }
+.vc-frozen {
+  position: absolute; right: 16px; bottom: 14px; z-index: 2; font-weight: 800; letter-spacing: 3px; font-size: 12px;
+  background: rgba(0, 0, 0, 0.55); padding: 4px 10px; border-radius: 8px;
+}
+.limit { display: grid; gap: 6px; }
+.limit-row { display: flex; justify-content: space-between; font-size: 14px; }
+.limit progress { width: 100%; height: 10px; border-radius: 999px; overflow: hidden; border: 0; background: var(--line); accent-color: #c2398f; }
+.limit progress::-webkit-progress-bar { background: var(--line); }
+.limit progress::-webkit-progress-value { background: #c2398f; }
+.limit progress::-moz-progress-bar { background: #c2398f; }
+.card-tools .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-tools .btns button { padding: 10px 14px; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.inline-form input { flex: 1 1 160px; min-width: 0; }

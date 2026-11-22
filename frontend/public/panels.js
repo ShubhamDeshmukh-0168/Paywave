@@ -1,4 +1,4 @@
-// Dashboard panels: add money (card), send, scan, my QR, recharge, AutoPay, profile, notifications.
+// Dashboard panels: add money, my cards, send, scan, my QR, recharge, AutoPay, profile, notifications.
 // Each builder gets `ctx` from app.js: { me, setBalance(money), refresh(), closePanel(), showPanel(kind, prefill), expired() }.
 (() => {
   'use strict';
@@ -44,128 +44,48 @@
 
   const validAmount = (text, min, max) => AMOUNT_RE.test(text) && Number(text) >= min && Number(text) <= max;
 
-  // ================================================================== add money by card
-  const luhn = (num) => {
-    let sum = 0;
-    let dbl = false;
-    for (let i = num.length - 1; i >= 0; i -= 1) {
-      let d = Number(num[i]);
-      if (dbl) { d *= 2; if (d > 9) d -= 9; }
-      sum += d;
-      dbl = !dbl;
-    }
-    return num.length > 0 && sum % 10 === 0;
-  };
-  function cardBrand(num) {
-    if (/^4/.test(num)) return 'VISA';
-    if (/^(5[1-5]|2(2[2-9][1-9]|2[3-9]|[3-6]|7[01]|720))/.test(num)) return 'MASTERCARD';
-    if (/^3[47]/.test(num)) return 'AMEX';
-    if (/^(60|65|81|82|508)/.test(num) && !/^6011/.test(num)) return 'RUPAY';
-    if (/^(6011|64[4-9])/.test(num)) return 'DISCOVER';
-    if (/^3(0[0-5]|[68])/.test(num)) return 'DINERS';
-    return 'OTHER';
-  }
-  const BRAND_LABEL = { VISA: 'Visa', MASTERCARD: 'Mastercard', RUPAY: 'RuPay', AMEX: 'American Express', DINERS: 'Diners Club', DISCOVER: 'Discover', OTHER: 'Card' };
-  const groupCard = (digits, brand) =>
-    (brand === 'AMEX' ? [4, 6, 5] : [4, 4, 4, 4, 4]).reduce((acc, n) => {
-      const used = acc.used;
-      const part = digits.slice(used, used + n);
-      if (part) acc.parts.push(part);
-      acc.used += n;
-      return acc;
-    }, { parts: [], used: 0 }).parts.join(' ');
+  // ================================================================== add money (own wallet, no card)
+  const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
 
   function buildAddPanel(ctx) {
     const err = h('p', { class: 'error', role: 'alert' });
-    const submit = h('button', { type: 'submit', class: 'big' }, 'Continue');
     const amount = h('input', { ...amountInputProps, pattern: '^\\d{1,9}(\\.\\d{1,2})?$' });
-    const number = h('input', { name: 'number', class: 'mono', inputmode: 'numeric', autocomplete: 'cc-number', placeholder: '1234 5678 9012 3456', maxlength: 23, required: true });
-    const expiry = h('input', { name: 'expiry', class: 'mono', inputmode: 'numeric', autocomplete: 'cc-exp', placeholder: 'MM/YY', maxlength: 5, required: true });
-    const cvv = h('input', { name: 'cvv', class: 'mono', type: 'password', inputmode: 'numeric', autocomplete: 'cc-csc', placeholder: '•••', maxlength: 4, required: true });
-    const holder = h('input', { name: 'holder', autocomplete: 'cc-name', placeholder: 'Name on card', maxlength: 60, required: true });
-    const brandTag = h('span', { class: 'brand-tag', 'aria-live': 'polite' });
-    let kind = 'CREDIT';
-    const kindBtns = [['CREDIT', 'Credit card'], ['DEBIT', 'Debit card']].map(([k, label]) =>
-      h('button', { type: 'button', class: `chip${k === kind ? ' on' : ''}`, 'data-kind': k, onclick: () => { kind = k; kindBtns.forEach((b) => b.classList.toggle('on', b.dataset.kind === k)); } }, label));
+    const submit = h('button', { type: 'submit', class: 'big' }, 'Add money');
+    const chips = QUICK_AMOUNTS.map((n) => {
+      const b = h('button', { type: 'button', class: 'chip' }, `+ ₹${n.toLocaleString('en-IN')}`);
+      b.addEventListener('click', () => { amount.value = String(n); amount.focus(); err.textContent = ''; });
+      return b;
+    });
     let key = randomKey();
 
-    number.addEventListener('input', () => {
-      const digits = number.value.replace(/\D/g, '').slice(0, 19);
-      const brand = cardBrand(digits);
-      number.value = groupCard(digits, brand);
-      brandTag.textContent = digits.length >= 1 ? BRAND_LABEL[brand] : '';
-      cvv.maxLength = brand === 'AMEX' ? 4 : 3;
-    });
-    expiry.addEventListener('input', () => {
-      let d = expiry.value.replace(/\D/g, '').slice(0, 4);
-      if (d.length >= 3) d = `${d.slice(0, 2)}/${d.slice(2)}`;
-      else if (d.length === 2 && expiry.value.length === 2 && !expiry.value.includes('/')) d = `${d}/`;
-      expiry.value = d;
-    });
-    cvv.addEventListener('input', () => { cvv.value = cvv.value.replace(/\D/g, ''); });
-
-    const chips = [500, 1000, 2000, 5000].map((v) =>
-      h('button', { class: 'chip', type: 'button', onclick: () => { amount.value = String(v); amount.focus(); } }, `₹${v}`));
-    const testBtn = h('button', { class: 'link', type: 'button' }, 'Fill test card');
-    testBtn.addEventListener('click', () => {
-      number.value = '4111 1111 1111 1111'; number.dispatchEvent(new Event('input'));
-      expiry.value = '12/34'; cvv.value = '123'; holder.value = ctx.me.fullName;
-    });
-
     const form = h('form', { class: 'form', novalidate: true },
+      h('p', { class: 'muted small' }, 'Add money straight to your PayWave wallet. No card needed.'),
       h('label', {}, 'Amount (₹)', amount),
       h('div', { class: 'chips' }, chips),
-      h('div', { class: 'seg' }, kindBtns),
-      h('label', {}, h('span', { class: 'lab-row' }, 'Card number', brandTag), number),
-      h('div', { class: 'row2' }, h('label', {}, 'Expiry', expiry), h('label', {}, 'CVV', cvv)),
-      h('label', {}, 'Name on card', holder),
       err, submit,
-      h('p', { class: 'muted small' }, 'Demo: no money is charged. Only the card type and last 4 digits are sent to our server, never the full number or CVV. ', testBtn,
-        '. Card 4000 0000 0000 0002 simulates a declined card.'));
+      h('p', { class: 'muted small' }, 'Demo wallet: the money is simulated, nothing is charged to anyone.'));
     const review = h('div', { class: 'hidden' });
-    const title = h('h3', {}, 'Add money from a card');
+    const title = h('h3', {}, 'Add money to your wallet');
     const host = h('section', { class: 'card panel' }, title, form, review);
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       err.textContent = '';
-      const digits = number.value.replace(/\D/g, '');
       const amt = amount.value.trim();
-      const m = /^(\d{2})\/(\d{2})$/.exec(expiry.value);
-      const brand = cardBrand(digits);
-      if (!validAmount(amt, 1, 50000)) { err.textContent = 'Enter an amount between ₹1 and ₹50,000'; return; }
-      if (digits.length < 13 || !luhn(digits)) { err.textContent = 'That card number is not valid'; return; }
-      const now = new Date();
-      if (!m || Number(m[1]) < 1 || Number(m[1]) > 12 ||
-          new Date(2000 + Number(m[2]), Number(m[1]), 1) <= new Date(now.getFullYear(), now.getMonth(), 1)) {
-        err.textContent = 'Check the card expiry date'; return;
-      }
-      if (cvv.value.length !== (brand === 'AMEX' ? 4 : 3)) { err.textContent = 'Check the CVV'; return; }
-      if (holder.value.trim().length < 2) { err.textContent = 'Enter the name on the card'; return; }
-
-      const last4 = digits.slice(-4);
-      const cardLabel = `${BRAND_LABEL[brand]} ${kind === 'CREDIT' ? 'credit' : 'debit'} •••• ${last4}`;
+      if (!validAmount(amt, 1, 50000)) { err.textContent = 'Enter an amount between ₹1 and ₹50,000 (max 2 decimals)'; return; }
       const showForm = () => { review.classList.add('hidden'); form.classList.remove('hidden'); title.classList.remove('hidden'); };
       setKids(review, reviewView({
-        title: 'Confirm top-up', ctx, back: showForm, confirmLabel: `Pay ${rupeesText(amt)}`,
-        rows: [['Card', cardLabel], ['Amount', rupeesText(amt)], ['Added to', 'PayWave wallet']],
+        title: 'Review', ctx, back: showForm, confirmLabel: `Add ${rupeesText(amt)}`,
+        rows: [['Amount', rupeesText(amt)], ['Added to', 'Your PayWave wallet']],
         onConfirm: async () => {
-          // A real card network would be called here. We only simulate a bank decline for one test number.
-          if (digits === '4000000000000002') {
-            await new Promise((r) => setTimeout(r, 600));
-            throw new Error('Your bank declined this card. Try another card.');
-          }
           const result = await api('/wallet/add-money', {
-            payments: true,
-            method: 'POST',
-            body: { amount: amt, card: { brand, kind, last4 } },
-            headers: { 'Idempotency-Key': key },
+            payments: true, method: 'POST', body: { amount: amt }, headers: { 'Idempotency-Key': key },
           });
           key = randomKey();
           ctx.setBalance(result.balance);
           ctx.closePanel();
           showReceipt({
-            title: 'Money added', amount: rupees(result.amount), line: `Paid with ${cardLabel}`,
+            title: 'Money added', amount: rupees(result.amount), line: 'Added to your wallet',
             rows: [['Date', fmtDate(result.createdAt)], ['Reference', result.transactionId.slice(0, 8).toUpperCase(), true], ['New balance', rupees(result.balance)]],
           });
           ctx.refresh();
@@ -173,6 +93,140 @@
       }));
       form.classList.add('hidden'); title.classList.add('hidden'); review.classList.remove('hidden');
     });
+    return host;
+  }
+
+  // ================================================================== my cards (virtual debit + credit)
+  function buildCardsPanel(ctx) {
+    const listHost = h('div', { class: 'cards-list' }, h('p', { class: 'muted' }, 'Loading your cards…'));
+    const host = h('section', { class: 'card panel' }, h('h3', {}, 'My cards'),
+      h('p', { class: 'muted small' }, 'Your PayWave virtual cards. Use them only when you choose to pay a person with a card; adding money to your wallet never needs one. Demo cards: no real card network is involved.'),
+      listHost);
+    let walletBalance = null;
+
+    function cardNode(c) {
+      const credit = c.kind === 'CREDIT';
+      const mm = String(c.expMonth).padStart(2, '0');
+      const yy = String(c.expYear).slice(-2);
+      const numEl = h('div', { class: 'vc-num mono' }, c.masked);
+      const cvvEl = h('b', { class: 'mono' }, '•••');
+      const face = h('div', { class: `vcard ${credit ? 'credit' : 'debit'}${c.status === 'FROZEN' ? ' frozen' : ''}` },
+        h('div', { class: 'vc-top' }, h('span', { class: 'vc-brand' }, 'PayWave'), h('span', { class: 'vc-kind' }, credit ? 'CREDIT' : 'DEBIT')),
+        numEl,
+        h('div', { class: 'vc-bottom' },
+          h('div', {}, h('small', {}, 'CARD HOLDER'), h('b', {}, c.holder)),
+          h('div', {}, h('small', {}, 'VALID THRU'), h('b', { class: 'mono' }, `${mm}/${yy}`)),
+          h('div', {}, h('small', {}, 'CVV'), cvvEl)),
+        c.status === 'FROZEN' && h('span', { class: 'vc-frozen' }, 'FROZEN'));
+
+      const info = credit
+        ? h('div', { class: 'limit' },
+          h('div', { class: 'limit-row' }, h('span', {}, 'Used ', h('b', {}, rupees(c.outstanding))), h('span', {}, 'Available ', h('b', {}, rupees(c.available)))),
+          h('progress', { max: c.creditLimit.paise, value: c.outstanding.paise, 'aria-label': 'Credit used' }),
+          h('small', { class: 'muted' }, `Limit ${rupees(c.creditLimit)}. Pay the bill from your wallet.`))
+        : h('p', { class: 'muted small' }, 'Spends your wallet balance', walletBalance ? ` (${rupees(walletBalance)})` : '', '.');
+
+      const tools = h('div', { class: 'card-tools' });
+      const msg = h('p', { class: 'error', role: 'alert' });
+      let hideTimer;
+
+      // password prompt shared by "Show details" and "Unfreeze"
+      function askPassword(label, run) {
+        const pw = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'Your password', maxlength: 128, required: true });
+        const go = h('button', { type: 'submit' }, label);
+        const cancel = h('button', { type: 'button', class: 'secondary' }, 'Cancel');
+        const f = h('form', { class: 'inline-form' }, pw, go, cancel);
+        cancel.addEventListener('click', paintTools);
+        f.addEventListener('submit', async (e) => {
+          e.preventDefault(); msg.textContent = ''; go.disabled = true;
+          try { await run(pw.value); } catch (er) {
+            if (er.status === 401) return ctx.expired();
+            msg.textContent = er.message; go.disabled = false;
+          }
+        });
+        setKids(tools, h('p', { class: 'muted small' }, 'Enter your password to continue.'), f);
+        pw.focus();
+      }
+      function hideDetails() {
+        clearTimeout(hideTimer);
+        numEl.textContent = c.masked; cvvEl.textContent = '•••';
+        paintTools();
+      }
+      function paintTools() {
+        const showBtn = h('button', { type: 'button', class: 'secondary' }, icon('eye'), 'Show details');
+        showBtn.addEventListener('click', () => askPassword('Show', async (password) => {
+          const d = await api('/cards/reveal', { method: 'POST', body: { kind: c.kind, password } });
+          numEl.textContent = d.number; cvvEl.textContent = d.cvv;
+          const copy = h('button', { type: 'button', class: 'secondary' }, icon('copy'), 'Copy number');
+          copy.addEventListener('click', async () => toast((await copyText(d.number.replace(/ /g, ''))) ? 'Card number copied' : 'Could not copy'));
+          const hide = h('button', { type: 'button', class: 'secondary' }, icon('eyeoff'), 'Hide');
+          hide.addEventListener('click', hideDetails);
+          setKids(tools, h('p', { class: 'muted small' }, 'Details hide again in 30 seconds.'), h('div', { class: 'btns' }, copy, hide));
+          clearTimeout(hideTimer); hideTimer = setTimeout(hideDetails, 30000);
+        }));
+        const frozen = c.status === 'FROZEN';
+        const freezeBtn = h('button', { type: 'button', class: 'secondary' }, icon(frozen ? 'play' : 'pause'), frozen ? 'Unfreeze' : 'Freeze');
+        freezeBtn.addEventListener('click', async () => {
+          msg.textContent = '';
+          const apply = async (password) => {
+            await api('/cards/status', { method: 'POST', body: { kind: c.kind, frozen: !frozen, ...(frozen ? { password } : {}) } });
+            toast(frozen ? 'Card unfrozen' : 'Card frozen');
+            load();
+          };
+          if (frozen) askPassword('Unfreeze', apply);
+          else { freezeBtn.disabled = true; try { await apply(); } catch (er) { if (er.status === 401) return ctx.expired(); msg.textContent = er.message; freezeBtn.disabled = false; } }
+        });
+        const buttons = [showBtn, freezeBtn];
+        if (credit && Number(c.outstanding.paise) > 0) {
+          const payBtn = h('button', { type: 'button' }, icon('wallet'), 'Pay bill');
+          payBtn.addEventListener('click', () => billForm());
+          buttons.push(payBtn);
+        }
+        setKids(tools, h('div', { class: 'btns' }, buttons));
+      }
+      function billForm() {
+        const due = c.outstanding.paise / 100;
+        const amt = h('input', { ...amountInputProps, value: due.toFixed(2) });
+        const go = h('button', { type: 'submit' }, 'Pay from wallet');
+        const cancel = h('button', { type: 'button', class: 'secondary' }, 'Cancel');
+        const f = h('form', { class: 'inline-form' }, amt, go, cancel);
+        let key = randomKey();
+        cancel.addEventListener('click', paintTools);
+        f.addEventListener('submit', async (e) => {
+          e.preventDefault(); msg.textContent = '';
+          const text = amt.value.trim();
+          if (!validAmount(text, 1, due)) { msg.textContent = `Enter an amount between ₹1 and ${rupees(c.outstanding)}`; return; }
+          go.disabled = true;
+          try {
+            const r = await api('/cards/repay', { payments: true, method: 'POST', body: { amount: text }, headers: { 'Idempotency-Key': key } });
+            key = randomKey();
+            ctx.setBalance(r.balance);
+            toast(`Paid ${rupees(r.amount)} towards your credit card`);
+            ctx.refresh();
+            load();
+          } catch (er) {
+            if (er.status === 401) return ctx.expired();
+            msg.textContent = er.message; go.disabled = false;
+          }
+        });
+        setKids(tools, h('p', { class: 'muted small' }, `You owe ${rupees(c.outstanding)}. It is paid from your wallet balance.`), f);
+        amt.focus();
+      }
+      paintTools();
+      return h('div', { class: 'card-block' }, face, info, tools, msg);
+    }
+
+    async function load() {
+      try {
+        const data = await api('/cards');
+        walletBalance = data.walletBalance;
+        setKids(listHost, data.items.map(cardNode));
+      } catch (e) {
+        if (e.status === 401) return ctx.expired();
+        setKids(listHost, h('p', { class: 'error' }, e.message));
+      }
+    }
+    load();
     return host;
   }
 
@@ -191,10 +245,41 @@
     let seq = 0;
     let timer;
 
+    // ---- how to pay: the wallet by default (nothing to enter). A card is only asked for if chosen.
+    let myCards = [];
+    let pick = 'WALLET'; // 'WALLET' | 'DEBIT' | 'CREDIT'
+    const payHost = h('div', { class: 'paywith', role: 'radiogroup', 'aria-label': 'Pay with' });
+    const cvvInput = h('input', { name: 'cvv', class: 'mono', type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: 3, placeholder: '•••' });
+    const cvvHint = h('span', { class: 'muted small' });
+    const cvvLabel = h('label', { class: 'hidden' }, h('span', { class: 'lab-row' }, 'CVV'), cvvInput, cvvHint);
+    const cardOf = (kind) => myCards.find((c) => c.kind === kind);
+    const cardName = (c) => `${c.kind === 'CREDIT' ? 'Credit' : 'Debit'} card •••• ${c.last4}`;
+    function paintPay() {
+      const opts = [['WALLET', 'Wallet', rupees(ctx.getBalance())]];
+      for (const c of myCards) {
+        opts.push([c.kind, cardName(c), c.status === 'FROZEN' ? 'Frozen' : c.kind === 'CREDIT' ? `${rupees(c.available)} available` : 'Uses wallet balance']);
+      }
+      setKids(payHost, opts.map(([id, label, sub]) => {
+        const c = cardOf(id);
+        const disabled = c && c.status === 'FROZEN';
+        const btn = h('button', { type: 'button', class: `src${pick === id ? ' on' : ''}`, role: 'radio', 'aria-checked': String(pick === id), disabled },
+          icon(id === 'WALLET' ? 'wallet' : 'card'), h('span', {}, h('b', {}, label), h('small', {}, sub)));
+        btn.addEventListener('click', () => { pick = id; cvvInput.value = ''; paintPay(); });
+        return btn;
+      }));
+      const chosen = cardOf(pick);
+      cvvLabel.classList.toggle('hidden', !chosen);
+      if (chosen) setKids(cvvHint, `3 digit CVV of your ${cardName(chosen).toLowerCase()}. `, h('button', { type: 'button', class: 'link', onclick: () => ctx.showPanel('cards') }, 'Show my cards'));
+    }
+    paintPay();
+    api('/cards').then((data) => { myCards = data.items; paintPay(); }).catch((e) => { if (e.status === 401) ctx.expired(); });
+
     const form = h('form', { class: 'form', novalidate: true },
       h('label', {}, "Recipient's mobile number", h('div', { class: 'with-btn' }, toInput, scanBtn)), status,
       h('label', {}, 'Amount (₹)', amountInput),
       h('label', {}, 'Note (optional)', noteInput),
+      h('div', {}, h('span', { class: 'lab-row' }, 'Pay with'), payHost),
+      cvvLabel,
       err, reviewBtn);
     const review = h('div', { class: 'hidden' });
     const title = h('h3', {}, 'Send money');
@@ -234,23 +319,35 @@
       const amt = amountInput.value.trim();
       if (!validAmount(amt, 1, 100000)) { err.textContent = 'Enter an amount between ₹1 and ₹1,00,000 (max 2 decimals)'; return; }
       const note = noteInput.value.trim();
+      const chosen = cardOf(pick);
+      let source;
+      if (chosen) {
+        const cvv = cvvInput.value.trim();
+        if (!/^\d{3}$/.test(cvv)) { err.textContent = `Enter the 3 digit CVV of your ${cardName(chosen).toLowerCase()}`; return; }
+        if (chosen.kind === 'CREDIT' && Number(amt) * 100 > chosen.available.paise) { err.textContent = `Your credit card has only ${rupees(chosen.available)} available`; return; }
+        source = { type: 'CARD', kind: chosen.kind, cvv };
+      }
       const showForm = () => { review.classList.add('hidden'); form.classList.remove('hidden'); title.classList.remove('hidden'); };
       setKids(review, reviewView({
         title: 'Review payment', ctx, back: showForm, confirmLabel: `Pay ${rupeesText(amt)}`,
-        rows: [['To', recipient.fullName], ['Mobile', spacedMobile(recipient.mobile) || spacedId(recipient.payId), true], ['Amount', rupeesText(amt)], note && ['Note', note]],
+        rows: [['To', recipient.fullName], ['Mobile', spacedMobile(recipient.mobile) || spacedId(recipient.payId), true], ['Amount', rupeesText(amt)], note && ['Note', note],
+          ['Pay with', chosen ? cardName(chosen) : 'Wallet']],
         onConfirm: async () => {
           const result = await api('/wallet/transfer', {
             payments: true,
-            method: 'POST', body: { to: recipient.mobile || recipient.payId, amount: amt, note },
+            method: 'POST', body: { to: recipient.mobile || recipient.payId, amount: amt, note, ...(source ? { source } : {}) },
             headers: { 'Idempotency-Key': key },
           });
           key = randomKey();
           ctx.setBalance(result.balance);
           ctx.closePanel();
+          const pw = result.paidWith || {};
           showReceipt({
             amount: rupees(result.amount), who: avatarFor(recipient, 'lg'), line: `Sent to ${recipient.fullName}`,
             rows: [['Mobile', spacedMobile(recipient.mobile), true], result.note && ['Note', result.note], ['Date', fmtDate(result.createdAt)],
-              ['Reference', result.transactionId.slice(0, 8).toUpperCase(), true], ['New balance', rupees(result.balance)]],
+              ['Reference', result.transactionId.slice(0, 8).toUpperCase(), true],
+              ['Paid with', pw.last4 ? `${pw.kind === 'CREDIT' ? 'Credit' : 'Debit'} card •••• ${pw.last4}` : 'Wallet'],
+              pw.creditAvailable ? ['Credit available', rupees(pw.creditAvailable)] : ['New balance', rupees(result.balance)]],
           });
           ctx.refresh();
         },
@@ -691,7 +788,7 @@
   }
 
   // ================================================================== notifications
-  const NOTIF_ICON = { PAYMENT_SENT: 'up', PAYMENT_RECEIVED: 'down', WALLET_TOPUP: 'wallet', RECHARGE: 'phone', AUTOPAY_FAILED: 'repeat' };
+  const NOTIF_ICON = { PAYMENT_SENT: 'up', PAYMENT_RECEIVED: 'down', WALLET_TOPUP: 'wallet', CARD_BILL: 'card', RECHARGE: 'phone', AUTOPAY_FAILED: 'repeat' };
   function notifNode(n) {
     const tone = n.kind === 'PAYMENT_RECEIVED' || n.kind === 'WALLET_TOPUP' ? 'credit' : n.kind === 'AUTOPAY_FAILED' ? 'warn' : 'debit';
     return h('li', { class: `notif${n.read ? '' : ' unread'}` },
@@ -700,9 +797,7 @@
   }
 
   window.PWPanels = {
-    buildAddPanel, buildSendPanel, buildQrPanel, buildScanPanel, buildRechargePanel, buildAutopayPanel, buildProfilePanel, notifNode,
-    // exposed for tests
-    luhn, cardBrand, groupCard,
+    buildAddPanel, buildCardsPanel, buildSendPanel, buildQrPanel, buildScanPanel, buildRechargePanel, buildAutopayPanel, buildProfilePanel, notifNode,
   };
   void session;
 })();
