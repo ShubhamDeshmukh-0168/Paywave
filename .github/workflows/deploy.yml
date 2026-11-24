@@ -3,7 +3,7 @@ name: Deploy PayWave
 # Push to main = test, build, create/update all AWS infrastructure with Terraform,
 # build and push the web and API images, deploy both to EKS (the website and the API service run
 # on Kubernetes; the payment transactions run in AWS Lambda), smoke test the public URLs, then install
-# Prometheus + Grafana monitoring on the cluster.
+# Prometheus + Grafana monitoring on the cluster (Grafana has its own load balancer address).
 on:
   push:
     branches: [main]
@@ -211,19 +211,34 @@ jobs:
         run: |
           echo "::warning::Prometheus/Grafana did not install. PayWave itself is deployed and working. See the 'Deploy monitoring' step log, fix it, and re-run the workflow."
 
-      - name: Monitoring summary
+      - name: Monitoring summary (Grafana address and login)
         if: ${{ steps.monitoring.outcome == 'success' }}
         env:
           GRAFANA_URL: ${{ steps.monitoring.outputs.grafana_url }}
+          GRAFANA_READY: ${{ steps.monitoring.outputs.grafana_ready }}
           PASSWORD_SET: ${{ secrets.GRAFANA_ADMIN_PASSWORD != '' }}
         run: |
           {
             echo ""
-            echo "## Monitoring"
+            echo "## Monitoring (Grafana)"
             echo ""
-            echo "- Grafana: ${GRAFANA_URL} (user \`admin\`)"
-            echo "- Dashboards: *PayWave API (Kubernetes)*, *PayWave AWS (Lambda, API Gateway, RDS)*, plus the built-in Kubernetes dashboards"
-            if [ "$PASSWORD_SET" != "true" ]; then
-              echo "- No GRAFANA_ADMIN_PASSWORD secret is set, so a password was generated. Get it with: \`kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d\`"
+            echo "- **Open Grafana: ${GRAFANA_URL}**"
+            echo "- User: \`admin\`"
+            if [ "$PASSWORD_SET" = "true" ]; then
+              echo "- Password: the value of your \`GRAFANA_ADMIN_PASSWORD\` secret"
+            else
+              PASS="$(kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d)"
+              echo "- Password (generated, keep this repository private): \`${PASS}\`"
             fi
+            if [ "$GRAFANA_READY" != "yes" ]; then
+              echo "- The load balancer was still starting when this run ended. Wait 2-5 minutes and open the link again."
+            fi
+            echo ""
+            echo "Dashboards are in the **PayWave** folder (Dashboards in the left menu):"
+            echo ""
+            echo "| Dashboard | What it monitors |"
+            echo "|---|---|"
+            echo "| 1. Website and API Health (Kubernetes) | Is the website API up, how fast, any errors |"
+            echo "| 2. Payments, Lambda, API Gateway and Database (AWS) | Money transfers, card top-ups, recharge, AutoPay and the PostgreSQL database |"
+            echo "| 3. Servers and Pods (Kubernetes cluster) | CPU, memory, disk and pods on the EKS servers |"
           } >> "$GITHUB_STEP_SUMMARY"

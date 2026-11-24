@@ -1,8 +1,10 @@
 {
  "uid": "paywave-api",
- "title": "PayWave API (Kubernetes)",
+ "title": "1. Website and API Health (Kubernetes)",
  "tags": [
-  "paywave"
+  "paywave",
+  "kubernetes",
+  "start-here"
  ],
  "timezone": "browser",
  "schemaVersion": 39,
@@ -15,16 +17,31 @@
  "editable": true,
  "panels": [
   {
+   "id": 100,
+   "type": "text",
+   "title": "What am I looking at?",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 3
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Monitors:** the PayWave website and its API servers running on Kubernetes (EKS).  \n**Source:** Prometheus (the API servers publish their own metrics).  \n**Read it like this:** top row = is it up, busy and healthy right now; middle = traffic and speed; bottom = server resources.  \nMoney transfers, recharge and card top-ups run in AWS Lambda: see dashboard **2. Payments, Lambda, API Gateway and Database**."
+   }
+  },
+  {
    "id": 1,
    "type": "stat",
-   "title": "API pods up",
+   "title": "Website API: servers running",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
-    "y": 0,
+    "y": 3,
     "w": 6,
     "h": 4
    },
@@ -44,19 +61,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "How many PayWave API servers (Kubernetes pods) are running and answering. Should be 2 or more. 0 = the website cannot sign in."
   },
   {
    "id": 2,
    "type": "stat",
-   "title": "Requests / sec",
+   "title": "Website API: requests per second",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 6,
-    "y": 0,
+    "y": 3,
     "w": 6,
     "h": 4
    },
@@ -76,19 +94,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "How many calls per second the website makes to the API (sign-up, login, profile, notifications...). Money transfers are NOT here: they run in AWS Lambda, see dashboard 2."
   },
   {
    "id": 3,
    "type": "stat",
-   "title": "5xx error ratio",
+   "title": "Website API: share of requests that failed",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 12,
-    "y": 0,
+    "y": 3,
     "w": 6,
     "h": 4
    },
@@ -108,19 +127,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Percent of requests that ended in a server error. Should stay near 0%. Above 5% raises the PayWaveApiHigh5xxRate alert."
   },
   {
    "id": 4,
    "type": "stat",
-   "title": "p95 latency",
+   "title": "Website API: response time (slowest 5%)",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 18,
-    "y": 0,
+    "y": 3,
     "w": 6,
     "h": 4
    },
@@ -140,19 +160,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "95 of every 100 requests were faster than this. Under 0.5 s is healthy. Above 1 s raises an alert."
   },
   {
    "id": 5,
    "type": "timeseries",
-   "title": "Requests / sec by route",
+   "title": "Requests per second, by page/endpoint",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
-    "y": 4,
+    "y": 7,
     "w": 12,
     "h": 8
    },
@@ -172,19 +193,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Which endpoints are used the most."
   },
   {
    "id": 6,
    "type": "timeseries",
-   "title": "Requests / sec by status",
+   "title": "Requests per second, by result (200 ok, 400 user error, 500 server error)",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 12,
-    "y": 4,
+    "y": 7,
     "w": 12,
     "h": 8
    },
@@ -204,19 +226,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "2xx = success, 4xx = user mistakes (wrong password, bad input), 5xx = our errors."
   },
   {
    "id": 7,
    "type": "timeseries",
-   "title": "p50 / p95 / p99 latency",
+   "title": "Response time: typical (p50), slow (p95), very slow (p99)",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
-    "y": 12,
+    "y": 15,
     "w": 12,
     "h": 8
    },
@@ -254,19 +277,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "p50 = typical request, p95 = slow ones, p99 = the slowest. A growing gap means something is getting slow."
   },
   {
    "id": 8,
    "type": "timeseries",
-   "title": "p95 latency by route",
+   "title": "Response time of the slowest 5%, by endpoint",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 12,
-    "y": 12,
+    "y": 15,
     "w": 12,
     "h": 8
    },
@@ -286,19 +310,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Shows which endpoint is the slow one."
   },
   {
    "id": 9,
    "type": "timeseries",
-   "title": "In-flight requests",
+   "title": "Requests being handled right now, per server",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
-    "y": 20,
+    "y": 23,
     "w": 8,
     "h": 8
    },
@@ -318,19 +343,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Requests currently being processed. A steadily high number means the servers are overloaded."
   },
   {
    "id": 10,
    "type": "timeseries",
-   "title": "Memory (RSS) per pod",
+   "title": "Memory used by each API server",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 8,
-    "y": 20,
+    "y": 23,
     "w": 8,
     "h": 8
    },
@@ -350,19 +376,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Memory each API server uses. A line that only goes up can mean a memory leak."
   },
   {
    "id": 11,
    "type": "timeseries",
-   "title": "CPU per pod (cores)",
+   "title": "CPU used by each API server",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 16,
-    "y": 20,
+    "y": 23,
     "w": 8,
     "h": 8
    },
@@ -382,19 +409,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "1.0 = one full CPU core. Kubernetes adds more API servers automatically when this stays high."
   },
   {
    "id": 12,
    "type": "timeseries",
-   "title": "Event loop lag p99",
+   "title": "Server busy-ness (delay before the server picks up new work)",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 0,
-    "y": 28,
+    "y": 31,
     "w": 12,
     "h": 8
    },
@@ -414,19 +442,20 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "How late the Node.js server is in starting new work. Near 0 is healthy; above 0.1 s means the server is overloaded."
   },
   {
    "id": 13,
    "type": "timeseries",
-   "title": "Container restarts (paywave namespace)",
+   "title": "Crashes / restarts of PayWave servers",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
    },
    "gridPos": {
     "x": 12,
-    "y": 28,
+    "y": 31,
     "w": 12,
     "h": 8
    },
@@ -446,10 +475,12 @@
       "uid": "prometheus"
      }
     }
-   ]
+   ],
+   "description": "Counts every time a PayWave container crashed and was restarted. Should be flat."
   }
  ],
  "templating": {
   "list": []
- }
+ },
+ "description": "Is the PayWave website API up, fast and error-free? Servers (pods) on Kubernetes, data from Prometheus."
 }

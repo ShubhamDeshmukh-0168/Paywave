@@ -5,8 +5,6 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine
 USER root
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY origin.conf /etc/nginx/conf.d/00-origin.conf
-COPY 15-resolver.sh /docker-entrypoint.d/15-resolver.sh
-RUN chmod 0755 /docker-entrypoint.d/15-resolver.sh
 COPY public/ /usr/share/nginx/html/
 USER 101
 

@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------ CloudFront in front of the web app
-# Users open https://<id>.cloudfront.net. CloudFront serves the site and forwards /api/* (and /grafana/*)
-# to the web pods on EKS. There is no Kubernetes-created public LoadBalancer any more: the web Service is
-# a NodePort, and the only public entry point is the CloudFront distribution.
+# Users open https://<id>.cloudfront.net. CloudFront serves the site and forwards /api/*
+# to the web pods on EKS. The website has no Kubernetes-created public LoadBalancer: the web Service is
+# a NodePort, and the only public entry point for the website is the CloudFront distribution (Grafana has its own load balancer).
 #
 #   browser --https--> CloudFront --http--> NLB (Terraform) --> NodePort 30080 on the EKS nodes --> nginx pods
 #
@@ -138,18 +138,6 @@ resource "aws_cloudfront_distribution" "web" {
   # The API: never cached, all methods and headers passed through
   ordered_cache_behavior {
     path_pattern             = "/api/*"
-    target_origin_id         = "web-nlb"
-    viewer_protocol_policy   = "redirect-to-https"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    compress                 = true
-    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
-  }
-
-  # Grafana (monitoring), served from the same address under /grafana/
-  ordered_cache_behavior {
-    path_pattern             = "/grafana/*"
     target_origin_id         = "web-nlb"
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]

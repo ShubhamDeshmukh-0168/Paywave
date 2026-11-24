@@ -70,12 +70,20 @@ What the pipeline does, in order: unit tests (backend and QR code), build the La
 The deploy installs the `kube-prometheus-stack` Helm chart into the `monitoring` namespace (`scripts/deploy-monitoring.sh`, values in `k8s/monitoring/`).
 
 - **Prometheus** scrapes the cluster (nodes, pods, kube-state-metrics) and the PayWave API pods, which expose `/metrics` on internal port 9100 (request count, latency histogram, in-flight requests, memory, CPU, event-loop lag). That port is not reachable through the public `/api/` proxy.
-- **Grafana** has no load balancer of its own: it is served on the same CloudFront address under `/grafana/` (`https://<id>.cloudfront.net/grafana/`). The job summary shows the URL. Log in as `admin` with the `GRAFANA_ADMIN_PASSWORD` secret; if it is not set, a random password was generated, read it with `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
-- **Dashboards**: *PayWave API (Kubernetes)* (Prometheus), *PayWave AWS (Lambda, API Gateway, RDS)* (CloudWatch data source, read through an IRSA role with `CloudWatchReadOnlyAccess`), plus the standard Kubernetes dashboards from the chart. Add your own by putting JSON in `k8s/monitoring/dashboards/`.
+- **Grafana has its own AWS load balancer** (a Network Load Balancer, plain HTTP). After the deploy, open the job summary (*Actions > the run > Summary > Monitoring (Grafana)*): it shows the Grafana address `http://<name>.elb.<region>.amazonaws.com`, the user `admin` and the password (your `GRAFANA_ADMIN_PASSWORD` secret, or a generated one printed there, so keep the repository private). A brand-new load balancer needs 2-5 minutes before the address answers.
+- **Dashboards** (Grafana left menu > Dashboards > folder **PayWave**). The number in each name tells you the order to look at them:
+
+  | Dashboard | What it monitors | Data from |
+  |---|---|---|
+  | **1. Website and API Health (Kubernetes)** | Are the website API pods up, requests per second, failed requests, response time, memory/CPU of each API pod, restarts | Prometheus |
+  | **2. Payments, Lambda, API Gateway and Database (AWS)** | Money transfers, card top-ups, recharge and AutoPay (Lambda calls, errors, time), the API Gateway front door, the PostgreSQL database (CPU, connections, free disk) | CloudWatch (IRSA role with `CloudWatchReadOnlyAccess`) |
+  | **3. Servers and Pods (Kubernetes cluster)** | CPU, memory, disk and network of the EKS servers, how many pods run, pods stuck Pending | Prometheus |
+
+  Every dashboard starts with a "What am I looking at?" box, and hovering the small *i* on a panel explains it and says what a healthy value is. The standard Kubernetes dashboards from the chart are also there. Add your own JSON in `k8s/monitoring/dashboards/`.
 - **Alert rules** (`k8s/monitoring/rules.yaml`): API down, 5xx above 5%, p95 latency above 1 s, pod restarts. Alertmanager is off, so they show in *Grafana > Alerting*; the emailed alarms remain the CloudWatch ones.
 - **No persistent storage**: Prometheus keeps 7 days in memory-backed pod storage, so history resets if the pod restarts. This avoids the EBS CSI driver and leaves nothing behind on destroy.
 - If monitoring fails to install, the deploy still succeeds (the app is live); you get a warning and can re-run the workflow.
-- Grafana is public on the internet (over HTTPS) behind its login. Use a strong `GRAFANA_ADMIN_PASSWORD`.
+- Grafana is reachable from the internet over plain HTTP behind its login. Set a strong `GRAFANA_ADMIN_PASSWORD` secret, and keep the repository private if you let the pipeline generate the password. If Grafana does not open: check the *Deploy monitoring* step log (it prints pod status and events on failure) and that the `monitoring-grafana` Service has an external hostname (`kubectl -n monitoring get svc monitoring-grafana`).
 - To look at Prometheus itself: `kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090`.
 
 ## Features and how they work
@@ -148,7 +156,7 @@ node --test frontend/test/*.test.js     # QR encoder/decoder tests
 
 ## Cost warning
 
-This is a real EKS + NAT + RDS stack. Rough estimate: **about $235-285 per month (~$0.35 per hour)** in `us-east-1`: EKS control plane ~$73, three `t3.medium` nodes ~$90 (a third node was added for Prometheus/Grafana), NAT gateway ~$35, one NLB behind CloudFront ~$17 (CloudFront itself is ~free at demo traffic), RDS `db.t3.micro` ~$15-20, the rest is small. Run **Actions > Destroy PayWave** (type `DESTROY`) when you are done. The Terraform state bucket (`paywave-tfstate-<account>-<region>`) is kept on purpose; delete it by hand if you want it gone.
+This is a real EKS + NAT + RDS stack. Rough estimate: **about $235-285 per month (~$0.35 per hour)** in `us-east-1`: EKS control plane ~$73, three `t3.medium` nodes ~$90 (a third node was added for Prometheus/Grafana), NAT gateway ~$35, one NLB behind CloudFront ~$17 and one NLB for Grafana ~$17 (CloudFront itself is ~free at demo traffic), RDS `db.t3.micro` ~$15-20, the rest is small. Run **Actions > Destroy PayWave** (type `DESTROY`) when you are done. The Terraform state bucket (`paywave-tfstate-<account>-<region>`) is kept on purpose; delete it by hand if you want it gone.
 
 ## Before this handles real money
 
@@ -167,6 +175,8 @@ Tested in a sandbox (no AWS account was available there):
 
 - **Backend:** 43 unit tests pass. A full run against a real **PostgreSQL 16**, with the Kubernetes-mode and the Lambda-mode API side by side, passed 41 checks: card issue (Luhn-valid numbers, encrypted at rest), password-protected reveal, add money with no card, sending from the wallet with no card, debit and credit card payments (wrong, missing and right CVV, idempotent replay), credit limit, freeze/unfreeze, auto-freeze after 5 wrong CVVs, bill payment, history, existing accounts getting cards on first visit, **10 parallel credit payments against the limit (exactly the right number succeed)**, a mixed parallel run with no deadlocks, and ledger checks. Migration 004 was also applied on top of a database with migrations 001-003 and existing rows.
 - **Frontend:** 8 QR tests pass. The real web app code was driven in a simulated browser (jsdom) against the real backend: add money with no card fields, the Cards panel (masked, reveal with password, hide), Send defaulting to Wallet with the CVV field appearing only when a card is chosen, a credit card payment, paying the bill, and the history, with zero JavaScript errors.
-- **nginx:** the real `nginx.conf` was run: direct requests without CloudFront's secret header get 403 (a wrong header and a suffix trick too), `/healthz` stays open, `/api` is proxied, `/grafana/` is proxied without the site's strict CSP.
+- **nginx:** the real `nginx.conf` was run: direct requests without CloudFront's secret header get 403 (a wrong header and a suffix trick too), `/healthz` stays open, `/api` is proxied.
 - **Kubernetes:** all manifests, including the Prometheus ServiceMonitor and alert rules, pass strict schema validation (kubeconform). Shell scripts pass ShellCheck.
-- **Terraform:** formatted and parsed; the module outputs and provider arguments used by `cloudfront.tf` were checked against the module source and the AWS provider docs. **`terraform apply`, the Docker builds and Helm were not run**, so the first pipeline run is the real test of CloudFront, the NLB, the Grafana chart and cluster networking.
+- **Terraform:** formatted and parsed; the module outputs and provider arguments used by `cloudfront.tf` were checked against the module source and the AWS provider docs. **`terraform apply`, the Docker builds and Helm were not run (the Grafana chart version falls back to the newest chart if the pinned one does not exist)**, so the first pipeline run is the real test of CloudFront, the NLB, the Grafana chart and cluster networking.
+
+- **UI (v4):** new indigo/violet and mint palette, gradient icon tiles for every action and feature, a landing-page hero preview, and refreshed card colours. Rendered in Chromium with the strict Content-Security-Policy in light, dark and phone width with zero console errors.

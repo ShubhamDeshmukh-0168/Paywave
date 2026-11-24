@@ -1,6 +1,6 @@
 {
  "uid": "paywave-aws",
- "title": "PayWave AWS (Lambda, API Gateway, RDS)",
+ "title": "2. Payments, Lambda, API Gateway and Database (AWS)",
  "tags": [
   "paywave",
   "aws"
@@ -16,16 +16,31 @@
  "editable": true,
  "panels": [
   {
+   "id": 100,
+   "type": "text",
+   "title": "What am I looking at?",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 3
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Monitors:** the AWS services behind money movement: payment functions (Lambda), the API front door (API Gateway) and the PostgreSQL database (RDS).  \n**Source:** Amazon CloudWatch (read through the CloudWatch data source).  \n**Read it like this:** rows = Payments (Lambda), Front door (API Gateway), Database (RDS). Errors and throttles should be 0."
+   }
+  },
+  {
    "id": 1,
    "type": "timeseries",
-   "title": "Lambda invocations (payments)",
+   "title": "Payments: number of payment calls",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 0,
-    "y": 0,
+    "y": 3,
     "w": 8,
     "h": 8
    },
@@ -56,19 +71,20 @@
      "matchExact": true,
      "label": "Lambda invocations (payments)"
     }
-   ]
+   ],
+   "description": "Each send-money, QR payment, card top-up, mobile recharge and AutoPay run is one Lambda call."
   },
   {
    "id": 2,
    "type": "timeseries",
-   "title": "Lambda errors",
+   "title": "Payments: failed payment calls",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 8,
-    "y": 0,
+    "y": 3,
     "w": 8,
     "h": 8
    },
@@ -99,19 +115,20 @@
      "matchExact": true,
      "label": "Lambda errors"
     }
-   ]
+   ],
+   "description": "Payment code crashed or timed out. Should be 0."
   },
   {
    "id": 3,
    "type": "timeseries",
-   "title": "Lambda throttles",
+   "title": "Payments: calls rejected because of too much traffic",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 16,
-    "y": 0,
+    "y": 3,
     "w": 8,
     "h": 8
    },
@@ -142,19 +159,20 @@
      "matchExact": true,
      "label": "Lambda throttles"
     }
-   ]
+   ],
+   "description": "AWS refused to start the function because the concurrency limit was reached. Should be 0."
   },
   {
    "id": 4,
    "type": "timeseries",
-   "title": "Lambda duration p95 (ms)",
+   "title": "Payments: time taken (slowest 5%, ms)",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 0,
-    "y": 8,
+    "y": 11,
     "w": 8,
     "h": 8
    },
@@ -185,19 +203,20 @@
      "matchExact": true,
      "label": "Lambda duration p95 (ms)"
     }
-   ]
+   ],
+   "description": "How long 95 of 100 payment calls take. Under 1000 ms is healthy."
   },
   {
    "id": 5,
    "type": "timeseries",
-   "title": "Lambda concurrent executions",
+   "title": "Payments: calls running at the same moment",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 8,
-    "y": 8,
+    "y": 11,
     "w": 8,
     "h": 8
    },
@@ -228,19 +247,20 @@
      "matchExact": true,
      "label": "Lambda concurrent executions"
     }
-   ]
+   ],
+   "description": "How many payments are being processed at the same time."
   },
   {
    "id": 6,
    "type": "timeseries",
-   "title": "API Gateway requests",
+   "title": "Front door (API Gateway): total requests",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 16,
-    "y": 8,
+    "y": 11,
     "w": 8,
     "h": 8
    },
@@ -271,19 +291,20 @@
      "matchExact": true,
      "label": "API Gateway requests"
     }
-   ]
+   ],
+   "description": "All calls that reached the payments front door."
   },
   {
    "id": 7,
    "type": "timeseries",
-   "title": "API Gateway 4XX",
+   "title": "Front door: user errors (4XX)",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 0,
-    "y": 16,
+    "y": 19,
     "w": 8,
     "h": 8
    },
@@ -314,19 +335,20 @@
      "matchExact": true,
      "label": "API Gateway 4XX"
     }
-   ]
+   ],
+   "description": "Rejected requests: wrong token, bad input, insufficient balance."
   },
   {
    "id": 8,
    "type": "timeseries",
-   "title": "API Gateway 5XX",
+   "title": "Front door: server errors (5XX)",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 8,
-    "y": 16,
+    "y": 19,
     "w": 8,
     "h": 8
    },
@@ -357,19 +379,20 @@
      "matchExact": true,
      "label": "API Gateway 5XX"
     }
-   ]
+   ],
+   "description": "Failures on our side. Should be 0."
   },
   {
    "id": 9,
    "type": "timeseries",
-   "title": "API Gateway latency p95 (ms)",
+   "title": "Front door: response time (slowest 5%, ms)",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 16,
-    "y": 16,
+    "y": 19,
     "w": 8,
     "h": 8
    },
@@ -400,19 +423,20 @@
      "matchExact": true,
      "label": "API Gateway latency p95 (ms)"
     }
-   ]
+   ],
+   "description": "Time from request to response as the user sees it."
   },
   {
    "id": 10,
    "type": "timeseries",
-   "title": "RDS CPU %",
+   "title": "Database: CPU used (%)",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 0,
-    "y": 24,
+    "y": 27,
     "w": 8,
     "h": 8
    },
@@ -443,19 +467,20 @@
      "matchExact": true,
      "label": "RDS CPU %"
     }
-   ]
+   ],
+   "description": "Load on the PostgreSQL database. Sustained above 80% means it needs a bigger instance."
   },
   {
    "id": 11,
    "type": "timeseries",
-   "title": "RDS connections",
+   "title": "Database: open connections",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 8,
-    "y": 24,
+    "y": 27,
     "w": 8,
     "h": 8
    },
@@ -486,19 +511,20 @@
      "matchExact": true,
      "label": "RDS connections"
     }
-   ]
+   ],
+   "description": "Open database connections from API pods and Lambda."
   },
   {
    "id": 12,
    "type": "timeseries",
-   "title": "RDS free storage",
+   "title": "Database: free disk space",
    "datasource": {
     "type": "cloudwatch",
     "uid": "cloudwatch"
    },
    "gridPos": {
     "x": 16,
-    "y": 24,
+    "y": 27,
     "w": 8,
     "h": 8
    },
@@ -529,10 +555,12 @@
      "matchExact": true,
      "label": "RDS free storage"
     }
-   ]
+   ],
+   "description": "Disk space left on the database. If this nears 0 the app stops saving data."
   }
  ],
  "templating": {
   "list": []
- }
+ },
+ "description": "Are payments working? AWS Lambda, API Gateway and the RDS database, data from CloudWatch."
 }

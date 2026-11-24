@@ -1,5 +1,5 @@
 # Helm values for kube-prometheus-stack: Prometheus + Grafana + node-exporter + kube-state-metrics.
-# scripts/deploy-monitoring.sh fills ${AWS_REGION}, ${GRAFANA_ROLE_ARN}, ${GRAFANA_DOMAIN} with envsubst.
+# scripts/deploy-monitoring.sh fills ${AWS_REGION}, ${GRAFANA_ROLE_ARN} with envsubst.
 
 # Alertmanager is off: CloudWatch alarms already email you (terraform/cloudwatch.tf). The Prometheus
 # alert rules (k8s/monitoring/rules.yaml) still show up in Grafana > Alerting > Alert rules.
@@ -72,18 +72,26 @@ grafana:
     annotations:
       eks.amazonaws.com/role-arn: "${GRAFANA_ROLE_ARN}"
 
-  # No public load balancer: Grafana is only reachable inside the cluster. The web pods' nginx proxies
-  # https://<cloudfront>/grafana/ to this Service (see frontend/nginx.conf).
+  # Grafana gets its own public AWS Network Load Balancer (plain HTTP on port 80), separate from the website.
+  # The address is printed in the job summary of the deploy. Login: user "admin" + the grafana-admin Secret.
   service:
-    type: ClusterIP
+    type: LoadBalancer
     port: 80
+    # In-tree AWS cloud provider (no extra controller needed): "nlb" = Network Load Balancer, internet-facing by default
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
 
   grafana.ini:
     server:
-      root_url: "https://${GRAFANA_DOMAIN}/grafana/"
-      serve_from_sub_path: true
+      # Served from the root of its own load balancer address, no sub path
+      serve_from_sub_path: false
     security:
-      cookie_secure: true
+      cookie_secure: false # the load balancer speaks plain HTTP
+      allow_embedding: false
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
     live:
       max_connections: 0 # Grafana Live uses WebSockets, which are not needed here
 
@@ -94,6 +102,10 @@ grafana:
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: ALL
+      # Each dashboard ConfigMap names its folder in the "grafana_folder" annotation (PayWave dashboards go to "PayWave")
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
 
   additionalDataSources:
     - name: CloudWatch

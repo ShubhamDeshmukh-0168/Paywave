@@ -155,8 +155,8 @@
       if (first) setTimeout(() => first.focus({ preventScroll: true }), 300);
     };
 
-    const feature = (ic, title, text) =>
-      h('div', { class: 'feature' }, h('div', { class: 'fi' }, icon(ic)), h('h3', {}, title), h('p', {}, text));
+    const feature = (ic, title, text, tone = 'indigo') =>
+      h('div', { class: 'feature' }, h('div', { class: 'fi' }, h('span', { class: `tile t-${tone}` }, icon(ic))), h('h3', {}, title), h('p', {}, text));
 
     const hero = h('section', { class: 'hero' },
       h('div', {},
@@ -172,7 +172,16 @@
           h('span', {}, icon('check'), 'No double charges')),
         h('div', { class: 'id-demo', 'aria-label': 'Example payment ID' },
           h('small', {}, 'Your payment ID'),
-          h('div', { class: 'row' }, h('span', { class: 'pid mono' }, '98765 43210'), h('span', { class: 'tag' }, 'Share to get paid')))),
+          h('div', { class: 'row' }, h('span', { class: 'pid mono' }, '98765 43210'), h('span', { class: 'tag' }, 'Share to get paid'))),
+        h('div', { class: 'hero-art', 'aria-hidden': 'true' },
+          h('div', { class: 'mock-card' },
+            h('small', {}, 'Wallet balance'),
+            h('div', { class: 'mc-amt' }, '₹12,480.00'),
+            h('div', { class: 'mc-row' },
+              h('span', { class: 'tile t-add' }, icon('plus')), h('span', { class: 'tile t-send' }, icon('send')),
+              h('span', { class: 'tile t-scan' }, icon('scan')), h('span', { class: 'tile t-qr' }, icon('qr')))),
+          h('div', { class: 'float f1' }, h('span', { class: 'tile t-add' }, icon('down')), h('span', {}, 'Received ₹500', h('small', {}, 'from Aarav, just now'))),
+          h('div', { class: 'float f2' }, h('span', { class: 'tile t-recharge' }, icon('phone')), h('span', {}, 'Recharge done', h('small', {}, 'Rs 299, 28 days'))))),
       h('div', {},
         pendingPay && h('div', { class: 'pay-banner' }, `Sign in or create an account to pay ${showTarget(pendingPay)}.`),
         host));
@@ -191,15 +200,15 @@
       h('h2', {}, 'Built for everyday payments'),
       h('p', { class: 'lead2' }, 'Everything you need to move money, nothing you do not.'),
       h('div', { class: 'grid3' },
-        feature('phone', 'Pay by mobile number', 'No account numbers or IFSC codes. Enter a number, confirm the name that appears, and pay.'),
-        feature('card', 'Your own debit and credit card', 'Every account gets a virtual debit card and a credit card. You are only asked for card details when you choose to pay someone with a card.'),
-        feature('qr', 'QR code and scanner', 'Show your QR code to get paid and scan other codes with your camera or a photo.'),
-        feature('bell', 'Notifications for everyone', 'Sender and receiver get an in-app notification and an email on every payment.'),
-        feature('repeat', 'AutoPay and recharge', 'Recharge any prepaid number and schedule daily, weekly or monthly payments.'),
-        feature('user', 'Profile photo', 'Add your photo so friends recognise you when they pay.'),
-        feature('chart', 'Spending insights', 'A 30 day summary and a 7 day chart show what you spent, received and added.'),
-        feature('shield', 'Safe retries', 'If your connection drops mid-payment, retrying never charges you twice.'),
-        feature('lock', 'Secure by design', 'Hashed passwords, email verification, login lockout and encrypted storage.')));
+        feature('phone', 'Pay by mobile number', 'No account numbers or IFSC codes. Enter a number, confirm the name that appears, and pay.', 'indigo'),
+        feature('card', 'Your own debit and credit card', 'Every account gets a virtual debit card and a credit card. You are only asked for card details when you choose to pay someone with a card.', 'violet'),
+        feature('qr', 'QR code and scanner', 'Show your QR code to get paid and scan other codes with your camera or a photo.', 'amber'),
+        feature('bell', 'Notifications for everyone', 'Sender and receiver get an in-app notification and an email on every payment.', 'pink'),
+        feature('repeat', 'AutoPay and recharge', 'Recharge any prepaid number and schedule daily, weekly or monthly payments.', 'coral'),
+        feature('user', 'Profile photo', 'Add your photo so friends recognise you when they pay.', 'sky'),
+        feature('chart', 'Spending insights', 'A 30 day summary and a 7 day chart show what you spent, received and added.', 'mint'),
+        feature('shield', 'Safe retries', 'If your connection drops mid-payment, retrying never charges you twice.', 'indigo'),
+        feature('lock', 'Secure by design', 'Hashed passwords, email verification, login lockout and encrypted storage.', 'violet')));
 
     const faq = h('section', { class: 'band faq' },
       h('h2', {}, 'Questions'),
@@ -257,7 +266,7 @@
       ['cards', 'card', 'My cards'], ['qr', 'qr', 'My QR'], ['recharge', 'phone', 'Recharge'], ['autopay', 'repeat', 'AutoPay'],
     ];
     const actionBtns = Object.fromEntries(ACTIONS.map(([kind, ic, label]) =>
-      [kind, h('button', { type: 'button', class: 'act', onclick: () => showPanel(kind) }, icon(ic), h('span', {}, label))]));
+      [kind, h('button', { type: 'button', class: 'act', onclick: () => showPanel(kind) }, h('span', { class: `tile t-${kind}` }, icon(ic)), h('span', {}, label))]));
 
     const identityHost = h('div', { class: 'identity' });
     const mobileHost = h('div', { class: 'idbox' });
