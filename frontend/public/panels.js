@@ -376,7 +376,7 @@
     g.fillRect(0, 0, canvas.width, canvas.height);
     g.fillStyle = '#000';
     for (let y = 0; y < n; y += 1) for (let x = 0; x < n; x += 1) if (modules[y][x]) g.fillRect((x + border) * scale, (y + border) * scale, scale, scale);
-    g.fillStyle = '#2f1f9e';
+    g.fillStyle = '#5b2fa0';
     g.textAlign = 'center';
     g.font = 'bold 30px sans-serif';
     g.fillText(name, qrPx / 2, qrPx + 8);

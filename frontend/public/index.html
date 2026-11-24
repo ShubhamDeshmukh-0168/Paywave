@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#2f1f9e" />
+    <meta name="theme-color" content="#f6f2fc" />
     <meta name="description" content="PayWave: a digital wallet. Pay by mobile number or QR, add money in one tap, get your own debit and credit card, recharge your phone and set up AutoPay." />
     <title>PayWave - Pay anyone with just a mobile number</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -12,7 +12,11 @@
   <body>
     <header class="topbar">
       <a class="brand" href="#" id="brandLink" aria-label="PayWave home"><img src="favicon.svg" alt="" width="30" height="30" /><span class="b1">Pay</span><span class="b2">Wave</span></a>
+      <nav id="topNav" class="topnav hidden" aria-label="Sections">
+        <a href="#how">How it works</a><a href="#features">Features</a><a href="#faq">Questions</a>
+      </nav>
       <div class="top-actions">
+        <button id="navSignin" class="pill-dark hidden" type="button">Sign in <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14 M13 6l6 6-6 6" /></svg></button>
         <button id="themeBtn" class="icon-btn" type="button" aria-label="Switch light or dark theme" title="Switch theme"></button>
         <button id="bellBtn" class="icon-btn bell hidden" type="button" aria-label="Notifications" title="Notifications">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 21h4" /></svg>

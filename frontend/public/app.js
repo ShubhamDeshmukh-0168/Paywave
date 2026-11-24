@@ -42,8 +42,15 @@
     window.scrollTo({ top: 0 });
   });
 
+  const topNav = document.getElementById('topNav');
+  const navSignin = document.getElementById('navSignin');
+  let landingFocus = () => {};
+  navSignin.addEventListener('click', () => landingFocus('login'));
   function setLayout(kind) {
     app.className = `container ${kind}`;
+    topNav.classList.toggle('hidden', kind !== 'wide');
+    navSignin.classList.toggle('hidden', kind !== 'wide');
+    document.body.classList.toggle('is-landing', kind === 'wide');
     logoutBtn.classList.toggle('hidden', kind !== 'dash');
     bellBtn.classList.toggle('hidden', kind !== 'dash');
     if (kind !== 'dash') popover.classList.add('hidden');
@@ -155,38 +162,51 @@
       if (first) setTimeout(() => first.focus({ preventScroll: true }), 300);
     };
 
+    landingFocus = focusAuth;
     const feature = (ic, title, text, tone = 'indigo') =>
       h('div', { class: 'feature' }, h('div', { class: 'fi' }, h('span', { class: `tile t-${tone}` }, icon(ic))), h('h3', {}, title), h('p', {}, text));
 
-    const hero = h('section', { class: 'hero' },
-      h('div', {},
-        h('span', { class: 'eyebrow' }, icon('bolt'), 'Your mobile number is your payment ID'),
-        h('h1', {}, 'Pay anyone with just a ', h('em', {}, 'mobile number.')),
-        h('p', { class: 'sub' }, 'Add money to your wallet in one tap, send and receive in seconds, scan a QR to pay, recharge your phone and set up AutoPay. You also get your own PayWave debit and credit card. Every payment sends a notification to both people.'),
+    const phoneTx = (ic, tone, name, sub, amt, cls) =>
+      h('div', { class: 'ph-tx' }, h('span', { class: `tile t-${tone}` }, icon(ic)),
+        h('span', { class: 'ph-tx-t' }, name, h('small', {}, sub)), h('b', { class: cls }, amt));
+    const phone = h('div', { class: 'stage-art', 'aria-hidden': 'true' },
+      h('div', { class: 'phone' },
+        h('div', { class: 'phone-screen' },
+          h('div', { class: 'ph-notch' }),
+          h('small', { class: 'ph-hi' }, 'Wallet balance'),
+          h('div', { class: 'ph-amt' }, '₹12,480.00'),
+          h('div', { class: 'ph-row' },
+            h('span', { class: 'tile t-add' }, icon('plus')), h('span', { class: 'tile t-send' }, icon('send')),
+            h('span', { class: 'tile t-scan' }, icon('scan')), h('span', { class: 'tile t-qr' }, icon('qr'))),
+          phoneTx('down', 'add', 'Aarav Mehta', 'Lunch', '+₹500', 'pos'),
+          phoneTx('up', 'recharge', 'Priya Nair', 'Cab', '-₹250', 'neg'),
+          phoneTx('phone', 'cards', 'Recharge', 'Rs 299 plan', '-₹299', 'neg'))),
+      h('div', { class: 'float f1' }, h('span', { class: 'tile t-add' }, icon('down')), h('span', {}, 'Received ₹500', h('small', {}, 'from Aarav, just now'))),
+      h('div', { class: 'float f2' }, h('span', { class: 'tile t-recharge' }, icon('bell')), h('span', {}, 'Payment sent', h('small', {}, 'both of you are notified'))));
+
+    const hero = h('section', { class: 'stage' },
+      h('div', { class: 'stage-top' },
+        h('div', { class: 'proof' },
+          h('span', { class: 'proof-av' }, h('i', { class: 'a1' }), h('i', { class: 'a2' }), h('i', { class: 'a3' })),
+          h('small', {}, 'Pay by mobile number, QR or card.', h('br'), 'Every payment notifies both people.')),
+        h('small', { class: 'corner' }, 'A NEW WAY', h('br'), 'TO PAY')),
+      h('div', { class: 'giant', 'aria-hidden': 'true' }, h('span', { class: 'g1' }, 'PAY'), h('span', { class: 'g2' }, 'WAVE')),
+      phone,
+      h('div', { class: 'stage-left' },
+        h('h1', {}, 'A more human way ', h('em', {}, 'to pay.')),
+        h('p', { class: 'sub' }, 'Your mobile number is your payment ID. Add money in one tap, send and receive in seconds, scan a QR, recharge your phone and set up AutoPay. You also get your own debit and credit card.'),
         h('div', { class: 'cta' },
           h('button', { class: 'big', type: 'button', onclick: () => focusAuth('register') }, 'Create free wallet'),
-          h('button', { class: 'big secondary', type: 'button', onclick: () => focusAuth('login') }, 'Sign in')),
+          h('button', { class: 'big outline', type: 'button', onclick: () => focusAuth('login') }, 'Sign in')),
         h('div', { class: 'trust' },
           h('span', {}, icon('check'), 'Email verified'),
           h('span', {}, icon('check'), 'Encrypted at rest'),
-          h('span', {}, icon('check'), 'No double charges')),
-        h('div', { class: 'id-demo', 'aria-label': 'Example payment ID' },
-          h('small', {}, 'Your payment ID'),
-          h('div', { class: 'row' }, h('span', { class: 'pid mono' }, '98765 43210'), h('span', { class: 'tag' }, 'Share to get paid'))),
-        h('div', { class: 'hero-art', 'aria-hidden': 'true' },
-          h('div', { class: 'mock-card' },
-            h('small', {}, 'Wallet balance'),
-            h('div', { class: 'mc-amt' }, '₹12,480.00'),
-            h('div', { class: 'mc-row' },
-              h('span', { class: 'tile t-add' }, icon('plus')), h('span', { class: 'tile t-send' }, icon('send')),
-              h('span', { class: 'tile t-scan' }, icon('scan')), h('span', { class: 'tile t-qr' }, icon('qr')))),
-          h('div', { class: 'float f1' }, h('span', { class: 'tile t-add' }, icon('down')), h('span', {}, 'Received ₹500', h('small', {}, 'from Aarav, just now'))),
-          h('div', { class: 'float f2' }, h('span', { class: 'tile t-recharge' }, icon('phone')), h('span', {}, 'Recharge done', h('small', {}, 'Rs 299, 28 days'))))),
-      h('div', {},
+          h('span', {}, icon('check'), 'No double charges'))),
+      h('div', { class: 'stage-right' },
         pendingPay && h('div', { class: 'pay-banner' }, `Sign in or create an account to pay ${showTarget(pendingPay)}.`),
         host));
 
-    const how = h('section', { class: 'band' },
+    const how = h('section', { class: 'band', id: 'how' },
       h('h2', {}, 'How it works'),
       h('p', { class: 'lead2' }, 'Three steps from sign-up to your first payment.'),
       h('div', { class: 'grid3' },
@@ -196,7 +216,7 @@
           ['3', 'Pay, scan, recharge', 'Pay a number, scan a QR, recharge a phone or schedule an AutoPay. Both sides get a notification.'],
         ].map(([n, t, d]) => h('div', { class: 'feature step' }, h('div', { class: 'num' }, n), h('h3', {}, t), h('p', {}, d)))));
 
-    const features = h('section', { class: 'band' },
+    const features = h('section', { class: 'band', id: 'features' },
       h('h2', {}, 'Built for everyday payments'),
       h('p', { class: 'lead2' }, 'Everything you need to move money, nothing you do not.'),
       h('div', { class: 'grid3' },
@@ -210,7 +230,7 @@
         feature('shield', 'Safe retries', 'If your connection drops mid-payment, retrying never charges you twice.', 'indigo'),
         feature('lock', 'Secure by design', 'Hashed passwords, email verification, login lockout and encrypted storage.', 'violet')));
 
-    const faq = h('section', { class: 'band faq' },
+    const faq = h('section', { class: 'band faq', id: 'faq' },
       h('h2', {}, 'Questions'),
       ...[
         ['Is this real money?', 'No. This is a demo wallet. Adding money, card payments and recharges are simulated: nothing is charged to a real card and no operator is contacted.'],
