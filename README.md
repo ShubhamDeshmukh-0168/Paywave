@@ -40,7 +40,7 @@ flowchart LR
 
 ## Live architecture (complete flow)
 
-After a deploy, open **`https://<id>.cloudfront.net/architecture/`** (the link is also in the job summary under *PayWave is live*; locally it is `http://localhost:8081/architecture/`). The page is served by the same nginx pods as the app, from `frontend/architecture/index.html`, so it is always the version that matches the deployed code. It is one self-contained page with real AWS and tool icons and an animated request that travels from place to place. Pick a tab and press Play, or click any icon to read what that service does and what it talks to:
+Open **[`docs/live-architecture.html`](docs/live-architecture.html)** in a browser (download the file or clone the repository; GitHub shows only its source). It is one self-contained page with real AWS and tool icons and an animated request that travels from place to place. Pick a tab and press Play, or click any icon to read what that service does and what it talks to:
 
 - **All services**: every tool and service in the order a visitor meets them (CloudFront, NLB, nginx, API pods, Lambda, API Gateway, RDS, Secrets Manager, S3, ECR, SMTP, EventBridge, CloudWatch, Prometheus, Grafana).
 - **Sign up**, **Send money**, **AutoPay**, **Monitoring**: the main journeys, step by step.
@@ -211,11 +211,10 @@ The script points `kubectl` at the cluster, installs metrics-server, deploys the
 curl -fsS "$API_URL/health?deep=1"                      # payments API (Lambda) + database
 curl -fsS "https://$CLOUDFRONT_DOMAIN/healthz"          # website through CloudFront
 curl -fsS "https://$CLOUDFRONT_DOMAIN/api/health?deep=1" # API pods through nginx
-curl -fsSI "https://$CLOUDFRONT_DOMAIN/architecture/"     # live architecture page
 kubectl -n paywave get pods
 ```
 
-A new CloudFront distribution can take up to 20 minutes to reach every edge location, so retry the last two commands a few times. Then open `https://$CLOUDFRONT_DOMAIN`, and the live architecture at `https://$CLOUDFRONT_DOMAIN/architecture/`.
+A new CloudFront distribution can take up to 20 minutes to reach every edge location, so retry the last two commands a few times. Then open `https://$CLOUDFRONT_DOMAIN`.
 
 ### 9. Sign-up codes without SMTP
 
@@ -298,10 +297,11 @@ The deploy installs the `kube-prometheus-stack` Helm chart into the `monitoring`
 ```
 terraform/   VPC, EKS (+IRSA), RDS, Lambda, API Gateway, EventBridge, CloudFront + NLB, S3, ECR, IAM, Secrets, CloudWatch
 backend/     API code (src/), SQL migrations, tests, Dockerfile + server.js (Kubernetes), Lambda entry src/index.js
-frontend/    Web app (public/: core.js, panels.js, app.js, qr.js), architecture/index.html (live architecture page, served at /architecture/), nginx.conf (/api proxy), Dockerfile, QR tests
+frontend/    Web app (public/: core.js, panels.js, app.js, qr.js), nginx.conf (/api proxy), Dockerfile, QR tests
 k8s/         Namespace, web (ConfigMap, Deployment, NodePort Service, HPA, PDB), api.yaml (ServiceAccount, Deployment, ClusterIP Service, HPA, PDB)
 k8s/monitoring/  Prometheus + Grafana Helm values, ServiceMonitor, alert rules, dashboards (JSON)
 scripts/     build-lambda.sh, bootstrap-state.sh, deploy-k8s.sh, deploy-monitoring.sh, destroy.sh
+docs/        live-architecture.html: the animated, complete architecture and request flow (open in a browser)
 .github/workflows/   deploy.yml, ci.yml, destroy.yml
 docker-compose.yml   Local run: Postgres + mail catcher + API + web
 ```

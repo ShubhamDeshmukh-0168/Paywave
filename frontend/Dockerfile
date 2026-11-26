@@ -6,7 +6,6 @@ USER root
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY origin.conf /etc/nginx/conf.d/00-origin.conf
 COPY public/ /usr/share/nginx/html/
-COPY architecture/ /usr/share/nginx/html/architecture/
 USER 101
 
 EXPOSE 8080

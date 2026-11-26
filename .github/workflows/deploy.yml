@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths-ignore:
       - "**.md"
+      - "docs/**"
   workflow_dispatch:
 
 concurrency:
@@ -182,7 +183,6 @@ jobs:
                 echo "## PayWave is live"
                 echo ""
                 echo "- **App: ${URL}**"
-                echo "- **Live architecture: ${URL}/architecture/**"
                 echo "- Payments API (Lambda): ${API_URL}"
                 echo "- API service (Kubernetes): ${URL}/api/health"
                 if [ -z "${{ secrets.SMTP_HOST }}" ]; then
