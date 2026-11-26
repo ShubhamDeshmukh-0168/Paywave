@@ -38,16 +38,6 @@ flowchart LR
 | Prometheus + Grafana | Metrics, dashboards and alert rules on the cluster (`k8s/monitoring/`, Helm `kube-prometheus-stack`) |
 | GitHub Actions | `deploy.yml` (full deploy on push), `ci.yml` (PR checks), `destroy.yml` (manual tear down), `otp.yml` (manual: show sign-up codes when SMTP is not set) |
 
-## Live architecture (complete flow)
-
-Open **[`docs/live-architecture.html`](docs/live-architecture.html)** in a browser (download the file or clone the repository; GitHub shows only its source). It is one self-contained page with real AWS and tool icons and an animated request that travels from place to place. Pick a tab and press Play, or click any icon to read what that service does and what it talks to:
-
-- **All services**: every tool and service in the order a visitor meets them (CloudFront, NLB, nginx, API pods, Lambda, API Gateway, RDS, Secrets Manager, S3, ECR, SMTP, EventBridge, CloudWatch, Prometheus, Grafana).
-- **Sign up**, **Send money**, **AutoPay**, **Monitoring**: the main journeys, step by step.
-- **API Gateway and API**: how a request passes through API Gateway, Lambda and the API pods, then how the **JWT** is created at sign-in and checked on every request, and how **SMTP** emails (sign-up code and payment notices) are sent.
-- **Networking and security**: VPC, subnets, security groups, IAM, NAT and internet gateway.
-- **Inside Kubernetes**, **Local development**, **Other workflows**, **Deployment**: pods and scaling, docker compose, the four workflows, and the CI/CD pipeline from `git push` to a running app.
-
 ## Deploy in 5 steps
 
 1. **Create a GitHub repository** and push this folder to it (branch `main`).
@@ -73,191 +63,7 @@ Open **[`docs/live-architecture.html`](docs/live-architecture.html)** in a brows
 
 What the pipeline does, in order: unit tests (backend and QR code), build the Lambda zip, create the Terraform state bucket (first run), `terraform apply`, build and push the **web and API images** to ECR, sync static files to S3, deploy the API and web pods to EKS, then smoke-test the payments Lambda, the API pods (this also runs the DB migrations) and the website, and finally install **Prometheus + Grafana** on the cluster.
 
-Prefer to run it yourself? See **[Manual deployment](#manual-deployment-without-github-actions)** below.
-
 **Push = deploy, destroy = manual.** `deploy.yml` runs on every push to `main` (except Markdown-only changes). `destroy.yml` has only a manual trigger: *Actions > Destroy PayWave > Run workflow*, then type `DESTROY`. It never runs on push.
-
-## Manual deployment (without GitHub Actions)
-
-`deploy.yml` is only a script that runs these same commands on a GitHub server. You can run them yourself from your own computer, in the same order. Use this to learn what each step does, to debug a failed pipeline run, or when you cannot use GitHub Actions. Do not mix the two on one AWS account unless you use the same Terraform state bucket (step 3), otherwise two separate copies of the infrastructure are created.
-
-### 0. What to install
-
-| Tool | Version | Used for |
-|---|---|---|
-| AWS CLI v2 | any recent | login, S3, ECR, EKS |
-| Terraform | 1.11 or newer (the pipeline uses 1.12.2) | creates all AWS resources |
-| Node.js and npm | 22 | tests and the Lambda zip |
-| Docker | any recent | builds the web and API images |
-| kubectl | within one version of the cluster (EKS 1.35) | deploys to Kubernetes |
-| Helm | 3 | installs Prometheus + Grafana |
-| `envsubst` | from `gettext` (`apt install gettext-base`, `brew install gettext`) | fills the `${NAMES}` in `k8s/*.yaml` |
-| `zip`, `curl`, `openssl`, `bash` | | scripts |
-
-Use Linux, macOS or WSL. The scripts are bash.
-
-### 1. Log in to AWS and set the settings
-
-Use an IAM user in a sandbox account (the same kind of key as the pipeline: `AdministratorAccess` is the simplest). The identity that runs `terraform apply` becomes the EKS cluster admin, so use the same one for the whole deployment.
-
-```bash
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_REGION=us-east-1
-export PROJECT_NAME=paywave
-export ENVIRONMENT=prod
-aws sts get-caller-identity          # must print your account id
-
-# Email settings (optional). Leave SMTP_HOST empty to skip real emails; sign-up codes then go to the pod log (step 9).
-export TF_VAR_project_name=$PROJECT_NAME TF_VAR_environment=$ENVIRONMENT TF_VAR_aws_region=$AWS_REGION
-export TF_VAR_smtp_host="smtp.gmail.com"  TF_VAR_smtp_port=587
-export TF_VAR_smtp_user="you@gmail.com"   TF_VAR_smtp_password="your-app-password"
-export TF_VAR_smtp_from="PayWave <you@gmail.com>"
-export TF_VAR_alert_email="you@example.com"    # CloudWatch alarm emails (confirm the AWS email)
-```
-
-### 2. Run the tests and build the Lambda package
-
-```bash
-(cd backend && npm ci && npm test)
-node --test frontend/test/*.test.js
-bash scripts/build-lambda.sh          # creates backend/dist/lambda.zip
-```
-
-Terraform needs `lambda.zip` to exist before it can plan, so do not skip the build.
-
-### 3. Create the Terraform state bucket (first time only)
-
-```bash
-bash scripts/bootstrap-state.sh       # prints the bucket name: paywave-tfstate-<account-id>-<region>
-export STATE_BUCKET=paywave-tfstate-$(aws sts get-caller-identity --query Account --output text)-$AWS_REGION
-```
-
-The script is safe to run again. The bucket keeps Terraform's memory of what exists and a lock file.
-
-### 4. Create all AWS resources with Terraform (25-35 minutes the first time)
-
-```bash
-cd terraform
-terraform init -input=false \
-  -backend-config="bucket=$STATE_BUCKET" \
-  -backend-config="key=$PROJECT_NAME/$ENVIRONMENT/terraform.tfstate" \
-  -backend-config="region=$AWS_REGION" \
-  -backend-config="use_lockfile=true" \
-  -backend-config="encrypt=true"
-terraform validate
-terraform plan -out=tfplan            # read what will be created
-terraform apply tfplan                # EKS and RDS are the slow parts
-```
-
-This creates the VPC, subnets, NAT, EKS, RDS, Lambda, API Gateway, EventBridge, CloudFront, the NLB, S3, ECR, IAM, Secrets Manager and CloudWatch. Then read the results into shell variables for the next steps:
-
-```bash
-export API_URL=$(terraform output -raw api_url)
-export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
-export ECR_URL=$(terraform output -raw ecr_repository_url)
-export ECR_API_URL=$(terraform output -raw ecr_backend_repository_url)
-export FRONTEND_BUCKET=$(terraform output -raw frontend_bucket)
-export API_POD_ROLE_ARN=$(terraform output -raw api_pod_role_arn)
-export DB_HOST=$(terraform output -raw db_host)
-export DB_USER=$(terraform output -raw db_user)
-export DB_NAME=$(terraform output -raw db_name)
-export DB_SECRET_ARN=$(terraform output -raw db_secret_arn)
-export APP_SECRET_ARN=$(terraform output -raw app_secret_arn)
-export GRAFANA_ROLE_ARN=$(terraform output -raw grafana_role_arn)
-export CLOUDFRONT_DOMAIN=$(terraform output -raw cloudfront_domain)
-export ORIGIN_VERIFY=$(terraform output -raw origin_verify_secret)   # secret: do not paste it anywhere
-cd ..
-```
-
-### 5. Build the two images and push them to ECR
-
-```bash
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
-TAG=$(git rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M)    # any unique tag
-export IMAGE="$ECR_URL:$TAG"  API_IMAGE="$ECR_API_URL:$TAG"
-
-docker build --platform linux/amd64 -t "$IMAGE"     -t "$ECR_URL:latest"     frontend   # website (nginx)
-docker build --platform linux/amd64 -t "$API_IMAGE" -t "$ECR_API_URL:latest" backend    # API (Node.js)
-docker push "$IMAGE";     docker push "$ECR_URL:latest"
-docker push "$API_IMAGE"; docker push "$ECR_API_URL:latest"
-```
-
-`--platform linux/amd64` matters on Apple Silicon, because the EKS servers are x86.
-
-### 6. Copy the static files to S3
-
-```bash
-rm -rf /tmp/site && mkdir -p /tmp/site && cp -r frontend/public/. /tmp/site/
-printf 'window.APP_CONFIG = {\n  API_BASE_URL: "/api",\n  PAYMENTS_API_URL: "%s",\n};\n' "$API_URL" > /tmp/site/config.js
-aws s3 sync /tmp/site "s3://$FRONTEND_BUCKET/site/" --delete
-```
-
-This is a versioned copy of the release. The website you open is served by the nginx pods, which have the same files inside the image.
-
-### 7. Deploy the app to Kubernetes
-
-```bash
-export PAYMENTS_API_URL="$API_URL"
-export LOG_OTP_WITHOUT_SMTP=$([ -z "${TF_VAR_smtp_host:-}" ] && echo true || echo false)
-bash scripts/deploy-k8s.sh
-```
-
-The script points `kubectl` at the cluster, installs metrics-server, deploys the API pods first (their start-up runs the database migrations), creates the secret nginx uses to accept only CloudFront traffic, then deploys the web pods. If it fails, it prints the pod status and logs.
-
-### 8. Check that everything answers
-
-```bash
-curl -fsS "$API_URL/health?deep=1"                      # payments API (Lambda) + database
-curl -fsS "https://$CLOUDFRONT_DOMAIN/healthz"          # website through CloudFront
-curl -fsS "https://$CLOUDFRONT_DOMAIN/api/health?deep=1" # API pods through nginx
-kubectl -n paywave get pods
-```
-
-A new CloudFront distribution can take up to 20 minutes to reach every edge location, so retry the last two commands a few times. Then open `https://$CLOUDFRONT_DOMAIN`.
-
-### 9. Sign-up codes without SMTP
-
-If you set no SMTP values, read the 6 digit code from the API pod log right after pressing *Register* (valid 10 minutes):
-
-```bash
-kubectl -n paywave logs -l app=paywave-api --tail=200 | grep -i otp
-```
-
-### 10. Install Prometheus + Grafana (optional, about 10 minutes)
-
-```bash
-export GRAFANA_ADMIN_PASSWORD='choose-a-strong-password'   # optional; if unset a random one is created
-bash scripts/deploy-monitoring.sh                          # prints the Grafana address; user: admin
-kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo   # the generated password
-```
-
-### Updating after a code change
-
-- **Website or API code:** repeat step 5 with a new `TAG`, step 6, then step 7 (it rolls the pods to the new image).
-- **Payments (Lambda) code:** repeat step 2 (`build-lambda.sh`), then `terraform apply` in step 4. Terraform only replaces the function when the zip content changed.
-- **Infrastructure:** edit `terraform/*.tf` and run `terraform plan` then `terraform apply`.
-
-### Tearing everything down
-
-```bash
-bash scripts/destroy.sh               # removes Grafana, the app namespace, then runs terraform destroy
-```
-
-Run it from a shell where steps 1 and 4 (`terraform init`) were done in `terraform/`, and where `backend/dist/lambda.zip` exists (`touch backend/dist/lambda.zip` is enough). The state bucket is kept on purpose; delete it by hand if you want it gone (it is versioned, so empty all versions first in the S3 console, then delete the bucket).
-
-
-### If something goes wrong
-
-| Symptom | What to check |
-|---|---|
-| `terraform init` cannot find the bucket | Step 3 not run, or `AWS_REGION` differs from the one used for the bucket |
-| `terraform plan` says the zip file is missing | Run `bash scripts/build-lambda.sh` |
-| `kubectl` says unauthorized | Use the same AWS identity that ran `terraform apply`, or add yours as an EKS access entry |
-| Pods `ImagePullBackOff` | The images were not pushed, or were built for the wrong CPU type (use `--platform linux/amd64`) |
-| Website returns 403 | You called the load balancer directly. Use the CloudFront address; only it sends the secret header |
-| CloudFront returns 502 or 504 right after deploy | Wait a few minutes; the load balancer is still finding healthy servers |
-| `envsubst: command not found` | Install `gettext` |
 
 ## Monitoring (Prometheus + Grafana)
 
@@ -301,7 +107,6 @@ frontend/    Web app (public/: core.js, panels.js, app.js, qr.js), nginx.conf (/
 k8s/         Namespace, web (ConfigMap, Deployment, NodePort Service, HPA, PDB), api.yaml (ServiceAccount, Deployment, ClusterIP Service, HPA, PDB)
 k8s/monitoring/  Prometheus + Grafana Helm values, ServiceMonitor, alert rules, dashboards (JSON)
 scripts/     build-lambda.sh, bootstrap-state.sh, deploy-k8s.sh, deploy-monitoring.sh, destroy.sh
-docs/        live-architecture.html: the animated, complete architecture and request flow (open in a browser)
 .github/workflows/   deploy.yml, ci.yml, destroy.yml
 docker-compose.yml   Local run: Postgres + mail catcher + API + web
 ```
