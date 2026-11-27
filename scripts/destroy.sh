@@ -22,5 +22,10 @@ else
   echo "EKS cluster $CLUSTER_NAME not found, skipping Kubernetes cleanup"
 fi
 
+# The database has deletion protection and takes a final snapshot (kept after the destroy). Switch protection
+# off first so the destroy is not blocked. Nothing is lost: the final snapshot is created before deletion.
+aws rds modify-db-instance --db-instance-identifier "${CLUSTER_NAME}-pg" --no-deletion-protection \
+  --apply-immediately --region "$REGION" >/dev/null 2>&1 || true
+
 cd "$ROOT/terraform" || exit 1
 terraform destroy -input=false -auto-approve

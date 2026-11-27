@@ -81,3 +81,11 @@ output "origin_verify_secret" {
   value       = random_password.origin_verify.result
   sensitive   = true
 }
+
+output "backup_vault" {
+  value = aws_backup_vault.main.name
+}
+
+output "backup_vault_dr" {
+  value = var.enable_dr_copy ? aws_backup_vault.dr[0].name : ""
+}

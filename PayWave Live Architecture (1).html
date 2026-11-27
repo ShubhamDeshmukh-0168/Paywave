@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <!doctype html>
 <html lang="en">
 <head>
@@ -318,6 +317,7 @@ svg.dg{display:block;width:100%;height:auto}
 <symbol id="d-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 10l3 2.5L7 15M12.5 15H17"/></symbol>
 <symbol id="d-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></symbol>
 <symbol id="d-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H21M17 12v3M20 12v2.5"/></symbol>
+<symbol id="d-vault" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.2"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8v-2M12 17.2v-2M8.8 12h-2M17.2 12h-2"/></symbol>
 <symbol id="d-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><circle cx="12" cy="17" r="1"/></symbol>
 <symbol id="d-route" viewBox="0 0 24 24"><path d="M4 6h8l4 6-4 6H4"/><path d="M16 12h4"/></symbol>
 <symbol id="d-link" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5M8 11l-2 2a3.5 3.5 0 0 0 5 5l2-2M16 13l2-2a3.5 3.5 0 0 0-5-5l-2 2"/></symbol>
@@ -508,6 +508,25 @@ const GW = {
     ssmtp:{x:1220,y:1120,t:'SMTP server',s:'your mail provider',i:'d-mail',drawn:true}
   }
 };
+const BK = {
+  w: 1300, h: 760, y0: 0,
+  groups: [
+    {x:20,y:30,w:820,h:710,label:'Your region (us-east-1)'},
+    {x:880,y:30,w:400,h:480,label:'Disaster recovery region (us-west-2)'}
+  ],
+  nodes: {
+    rds:{x:120,y:210,t:'RDS PostgreSQL',s:'all user data',i:'aws-rds'},
+    pitr:{x:120,y:450,t:'Point-in-time log',s:'any second, 14 days',i:'d-gauge',drawn:true},
+    bplan:{x:380,y:210,t:'AWS Backup plan',s:'daily + monthly',i:'d-route',drawn:true},
+    bvault:{x:640,y:210,t:'Backup vault',s:'daily 35 d, monthly 365 d',i:'d-vault',drawn:true},
+    bsnap:{x:380,y:450,t:'Final snapshot',s:'kept after destroy',i:'d-vault',drawn:true},
+    bsns:{x:640,y:450,t:'SNS backup events',s:'failures + restores',i:'aws-sns'},
+    binbox:{x:640,y:630,t:'Your inbox',s:'ALERT_EMAIL',i:'d-mail',drawn:true},
+    bdr:{x:1010,y:210,t:'DR vault',s:'copy in another region',i:'d-vault',drawn:true},
+    bkey:{x:1190,y:210,t:'Key copy',s:'jwt-key-backup secret',i:'d-key',drawn:true},
+    brest:{x:1010,y:400,t:'New RDS database',s:'restored from a snapshot',i:'aws-rds'}
+  }
+};
 const DEP = {
   w: 1300, h: 1030, y0: 0,
   groups: [
@@ -645,6 +664,32 @@ mon: {
    {r:['grafana','prom'],from:'grafana',to:'prom',chip:'PromQL query',t:'Dashboards ask Prometheus for numbers',d:'Website and API health, and servers and pods, come from Prometheus.',g:['PromQL','dashboards 1 and 3']},
    {r:['prom','api'],from:'prom',to:'api',chip:'GET /metrics',t:'Prometheus scrapes the API pods',d:'A ServiceMonitor tells Prometheus to collect request counts, latency and errors from the API pods on a schedule, plus node and pod CPU and memory.',g:['ServiceMonitor','/metrics','node exporter']},
    {r:['grafana','cw'],from:'grafana',to:'cw',chip:'CloudWatch API',t:'The AWS dashboard reads CloudWatch',d:'Grafana uses an IAM role (IRSA) with read-only CloudWatch access to show Lambda, API Gateway and RDS metrics: transfers, errors, latency and database load.',g:['IRSA role','CloudWatch read-only','dashboard 2']}
+  ]},
+bks: {
+  tab:'Backup in short', sub:'the 30-second version', world:BK,
+  sum:'All user data is in one RDS database, so that is what is backed up. Five steps: RDS keeps recent history, AWS Backup snapshots it daily and monthly, every snapshot is copied to a second region, failures are emailed, and a restore builds a new database from a copy. The application needs no backup: code is in Git, infrastructure in Terraform, images in ECR.',
+  steps:[
+   {r:['rds','pitr'],from:'rds',to:'pitr',chip:'14 days of history',t:'1. RDS keeps its own recent history',d:'Daily snapshots and a continuous log, so a copy can be made as it was at any second in the last 14 days. Loses a few minutes at most.',g:['point-in-time','14 days']},
+   {r:['bplan','rds',[120,100],[640,100],'bvault'],from:'bplan',to:'bvault',chip:'daily 35 d, monthly 365 d',t:'2. AWS Backup snapshots the database on a schedule',d:'Every day at 01:00 IST (kept 35 days) and on the 1st of each month (kept a year). The snapshot is encrypted and stored in the backup vault. The database stays online.',g:['schedule','vault','encrypted']},
+   {r:['bvault',[860,210],'bdr'],from:'bvault',to:'bdr',chip:'copy',t:'3. Every snapshot is copied to a second region',d:'If the whole region is lost, the data still exists in the DR vault. A copy of the encryption key goes there too, so card data can be read after a rebuild.',g:['cross-region','key copy']},
+   {r:['bvault','bsns','binbox'],from:'bvault',to:'binbox',chip:'failure email',t:'4. Failures are emailed',d:'A failed backup or copy sends an email to ALERT_EMAIL. Confirm the AWS subscription email once. There is no success message yet.',g:['SNS','ALERT_EMAIL']},
+   {r:['rds','bsnap'],from:'rds',to:'bsnap',chip:'on delete',t:'5. Deleting the database leaves a final snapshot',d:'Deletion protection blocks accidental deletes. A deliberate delete first takes a final snapshot that survives the destroy.',g:['deletion protection','final snapshot']},
+   {r:['bdr','brest'],from:'bdr',to:'brest',chip:'restore (manual)',t:'Recovery: a person starts a restore, and it builds a NEW database',d:'Nothing is overwritten and there is no automatic failover. Restore to a point in time for a mistake, from a snapshot for a lost database, or in the second region for a lost region. The README has the commands; run a test restore once.',g:['manual','new instance','test it once']}
+  ]},
+bk: {
+  tab:'Backup and recovery', sub:'RDS, AWS Backup, DR', world:BK,
+  sum:'All user data lives in one database, so that is what is protected, in four layers: RDS keeps its own recent history, AWS Backup takes daily and monthly snapshots, every snapshot is copied to a second region, and a final snapshot is kept when the database is deleted. A restore always builds a new database from a copy.',
+  steps:[
+   {r:['rds','pitr'],from:'rds',to:'pitr',chip:'transaction logs',t:'Layer 1: RDS keeps its own history',d:'RDS automatically takes a daily snapshot and saves the transaction log every few minutes, for 14 days (db_backup_retention_days, up to 35). That allows point-in-time recovery: a new database as it was at any second in that window, which is the tool for "someone deleted data an hour ago".',g:['automated backups','14 days','point-in-time']},
+   {r:['bplan','rds'],from:'bplan',to:'rds',chip:'start backup job',t:'Layer 2: AWS Backup runs on a schedule',d:'The plan has two rules. The daily rule runs at 19:30 UTC (01:00 IST) and is kept 35 days. The monthly rule runs on the 1st and is kept 365 days. AWS Backup uses its own IAM role to ask RDS for a snapshot, and the database stays online.',g:['backup plan','cron schedule','IAM role']},
+   {r:['rds',[120,100],[640,100],'bvault'],from:'rds',to:'bvault',chip:'snapshot',t:'The snapshot is stored in the backup vault',d:'The snapshot is encrypted, like the database disk, and kept in the vault paywave-prod-vault until its retention ends, then deleted automatically. The vault is created by Terraform, so it exists after every deploy.',g:['encrypted','vault','retention']},
+   {r:['bvault',[860,210],'bdr'],from:'bvault',to:'bdr',chip:'copy job',t:'Layer 3: a copy goes to another region',d:'Each snapshot is copied to a vault in a second region (us-west-2 by default) with the same retention. If the whole main region is lost, the data still exists there. The copy is made by AWS Backup from the same plan and can be switched off with enable_dr_copy.',g:['cross-region','dr_region','same retention']},
+   {r:['bdr','bkey'],from:'bdr',to:'bkey',chip:'encryption key',t:'The key that reads the card data is copied too',d:'Stored card numbers and CVVs are encrypted with the app key (jwt_secret). A snapshot without that key leaves cards unreadable. Terraform puts a copy in the second region as a secret named paywave-prod/jwt-key-backup. A destroy deletes it, so save the key yourself as well (the README shows how).',g:['jwt_secret','Secrets Manager','save it yourself']},
+   {r:['bvault','bsns'],from:'bvault',to:'bsns',chip:'job failed',t:'Failures are reported, not silent',d:'The vault sends BACKUP_JOB_FAILED, COPY_JOB_FAILED and RESTORE_JOB_COMPLETED events to its own SNS topic. A backup nobody notices is failing is not a backup.',g:['SNS','vault notifications']},
+   {r:['bsns','binbox'],from:'bsns',to:'binbox',chip:'email',t:'The email reaches ALERT_EMAIL',d:'The topic has an email subscription to the same address as the CloudWatch alarms. Confirm the AWS subscription email once, or nothing is delivered.',g:['ALERT_EMAIL','confirm subscription']},
+   {r:['rds','bsnap'],from:'rds',to:'bsnap',chip:'on delete',t:'Layer 4: a final snapshot when the database is deleted',d:'Deletion protection blocks deleting the database from the console or CLI by mistake. When the destroy workflow does delete it on purpose, RDS first takes a final snapshot (paywave-prod-pg-final-<id>). That snapshot is not part of the vault, so it survives the destroy. The vaults and their backups are removed with the rest.',g:['deletion protection','final snapshot','kept after destroy']},
+   {r:['bkey',[1190,400],'brest'],from:'bkey',to:'brest',chip:'TF_VAR_jwt_secret',t:'The saved key goes into the rebuilt stack',d:'When you rebuild from a copy, pass the saved key as jwt_secret so the restored database matches the key and the card numbers decrypt. In a restore inside the same stack the key is unchanged and nothing is needed.',g:['jwt_secret','rebuild only']},
+   {r:['bdr','brest'],from:'bdr',to:'brest',chip:'restore',t:'Recovery: a new database is built from a copy',d:'A restore never overwrites the running database. For a mistake: restore to a point in time into a new instance, check it, and copy the good rows back. For a lost database or region: deploy with db_snapshot_identifier set to the snapshot name, so Terraform builds the database from it. The README has the exact commands, and a restore should be tested once before you rely on it.',g:['new instance','db_snapshot_identifier','test it once']}
   ]},
 net: {
   tab:'Networking and security', sub:'VPC, subnets, SG, IAM', world:NET,
@@ -804,6 +849,15 @@ const INFO = {
  sotp:['Make the 6 digit code','Random code, stored as an HMAC with a 10 minute expiry and 5 attempts.','backend/src/auth.js issueOtp'],
  ssend:['nodemailer','Builds and sends the email with the SMTP settings from Secrets Manager.','backend/src/mailer.js'],
  ssmtp:['SMTP server','Your mail provider. Delivers the verification code to the user.','Used by: API pods and Lambda'],
+ pitr:['Point-in-time log','RDS keeps transaction logs, so a copy can be built as it was at any second in the last 14 days.','Setting: db_backup_retention_days'],
+ bplan:['AWS Backup plan','Two rules: daily at 19:30 UTC kept 35 days, monthly kept 365 days. Each also copies to the DR region.','terraform/backup.tf'],
+ bvault:['Backup vault','Where AWS Backup keeps the encrypted snapshots until retention ends. Sends failure events to SNS.','paywave-prod-vault'],
+ bsnap:['Final snapshot','Taken when the database is deleted and kept after the destroy, so the data can still be brought back.','Setting: db_skip_final_snapshot = false'],
+ bsns:['SNS backup events','Receives BACKUP_JOB_FAILED, COPY_JOB_FAILED and RESTORE_JOB_COMPLETED from the vault and emails ALERT_EMAIL.','Separate from the CloudWatch alerts topic'],
+ binbox:['Your inbox','Where backup failure emails arrive. Confirm the AWS subscription email once.','ALERT_EMAIL'],
+ bkey:['Key copy','A copy of the app encryption key in the second region, so a rebuilt stack can read the stored card data. Deleted by a destroy.','Secret: paywave-prod/jwt-key-backup'],
+ bdr:['DR vault','A vault in a second region that holds a copy of every snapshot, so a lost region does not lose the data.','Settings: enable_dr_copy, dr_region'],
+ brest:['New RDS database','What a restore produces: a new database built from a snapshot or a point in time. It never replaces the running one in place.','README: Backup and disaster recovery'],
  smtp:['SMTP server','Your mail provider. Sends sign-up codes and payment emails to both people.','Used by: API pods and Lambda via nodemailer'],
  eb:['EventBridge','A rule that fires every 5 minutes at the payments Lambda to run due AutoPays.','Talks to: Lambda'],
  cw:['CloudWatch','Logs, metrics, a dashboard and 7 alarms that email you through SNS.','Fed by: Lambda, API Gateway, RDS. Read by Grafana'],
@@ -1041,5 +1095,3 @@ requestAnimationFrame(ts=>{ last=ts; requestAnimationFrame(tick); });
 </script>
 </body>
 </html>
-
-</body></html>

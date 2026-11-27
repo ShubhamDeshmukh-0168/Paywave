@@ -78,15 +78,62 @@ variable "db_multi_az" {
 }
 
 variable "db_deletion_protection" {
-  description = "Set true to protect the database from accidental deletion/destroy."
+  description = "When true, the database cannot be deleted from the console or CLI until protection is switched off. (Terraform switches it off itself during a destroy.)"
+  type        = bool
+  default     = true
+}
+
+variable "db_skip_final_snapshot" {
+  description = "When false (the default), a final snapshot is taken when the database is deleted, and it is kept after the destroy."
   type        = bool
   default     = false
 }
 
-variable "db_skip_final_snapshot" {
-  description = "When false, a final snapshot is taken on destroy."
+variable "db_backup_retention_days" {
+  description = "Days of RDS automated backups. Also the window for point-in-time recovery (0 to 35)."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.db_backup_retention_days >= 1 && var.db_backup_retention_days <= 35
+    error_message = "db_backup_retention_days must be between 1 and 35."
+  }
+}
+
+variable "db_snapshot_identifier" {
+  description = "Recovery: a snapshot to restore the database from (a name, or an awsbackup:job-... snapshot). Leave empty for a normal, new, empty database. See README, Backup and recovery."
+  type        = string
+  default     = ""
+}
+
+# ---------------------------------------------------------------- Backup and disaster recovery
+variable "backup_retention_days" {
+  description = "Days the daily AWS Backup snapshots are kept."
+  type        = number
+  default     = 35
+}
+
+variable "backup_monthly_retention_days" {
+  description = "Days the monthly AWS Backup snapshots are kept."
+  type        = number
+  default     = 365
+}
+
+variable "enable_dr_copy" {
+  description = "Copy every backup to a second region (disaster recovery). Set false to keep backups in one region only."
   type        = bool
   default     = true
+}
+
+variable "dr_region" {
+  description = "Region that receives the disaster recovery copy. Must differ from aws_region."
+  type        = string
+  default     = "us-west-2"
+
+  validation {
+    condition     = var.dr_region != var.aws_region
+    error_message = "dr_region must be a different region from aws_region, otherwise it is not a disaster recovery copy."
+  }
 }
 
 # ---------------------------------------------------------------- Lambda / API
@@ -157,4 +204,11 @@ variable "alert_email" {
 variable "log_retention_days" {
   type    = number
   default = 30
+}
+
+variable "jwt_secret" {
+  description = "Recovery only: reuse this JWT/encryption key instead of generating a new one, so a restored database's encrypted card data stays readable. Leave empty for a normal deploy."
+  type        = string
+  default     = ""
+  sensitive   = true
 }

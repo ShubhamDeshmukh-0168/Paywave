@@ -26,10 +26,10 @@ flowchart LR
 
 | Technology | What it does here |
 |---|---|
-| Terraform | Creates VPC, EKS, RDS, Lambda, API Gateway, EventBridge, S3, ECR (2 repos), IAM, Secrets, CloudWatch (`terraform/`) |
+| Terraform | Creates VPC, EKS, RDS, Lambda, API Gateway, EventBridge, S3, ECR (2 repos), IAM, Secrets, CloudWatch, AWS Backup (`terraform/`) |
 | Kubernetes (EKS) | Website: Deployment x2, NodePort Service (reached through CloudFront; no Kubernetes-created load balancer). API service: Deployment x2, ClusterIP Service, HPA, PodDisruptionBudget, IRSA service account |
 | AWS Lambda + API Gateway | Payment transactions (add money, transfer, recharge) and the 5-minute AutoPay runner |
-| Amazon RDS PostgreSQL | Users, wallets, transactions, notifications, AutoPay. Private subnets, encrypted, reachable only from Lambda and the EKS nodes |
+| Amazon RDS PostgreSQL | Users, wallets, transactions, notifications, AutoPay. Private subnets, encrypted, reachable only from Lambda and the EKS nodes. Backed up daily and monthly with AWS Backup, copied to a second region, final snapshot on delete (see *Backup and disaster recovery*) |
 | AWS IAM | Least-privilege roles for Lambda and for the API pods (IRSA): each reads exactly 2 secrets |
 | Secrets Manager | DB password (RDS-managed, auto-rotated), JWT key and SMTP credentials |
 | Amazon S3 | Versioned private bucket with the built frontend/static files |
@@ -63,7 +63,295 @@ flowchart LR
 
 What the pipeline does, in order: unit tests (backend and QR code), build the Lambda zip, create the Terraform state bucket (first run), `terraform apply`, build and push the **web and API images** to ECR, sync static files to S3, deploy the API and web pods to EKS, then smoke-test the payments Lambda, the API pods (this also runs the DB migrations) and the website, and finally install **Prometheus + Grafana** on the cluster.
 
+Prefer to run it yourself? See **[Manual deployment](#manual-deployment-without-github-actions)** below.
+
 **Push = deploy, destroy = manual.** `deploy.yml` runs on every push to `main` (except Markdown-only changes). `destroy.yml` has only a manual trigger: *Actions > Destroy PayWave > Run workflow*, then type `DESTROY`. It never runs on push.
+
+## Manual deployment (without GitHub Actions)
+
+`deploy.yml` is only a script that runs these same commands on a GitHub server. You can run them yourself from your own computer, in the same order. Use this to learn what each step does, to debug a failed pipeline run, or when you cannot use GitHub Actions. Do not mix the two on one AWS account unless you use the same Terraform state bucket (step 3), otherwise two separate copies of the infrastructure are created.
+
+### 0. What to install
+
+| Tool | Version | Used for |
+|---|---|---|
+| AWS CLI v2 | any recent | login, S3, ECR, EKS |
+| Terraform | 1.11 or newer (the pipeline uses 1.12.2) | creates all AWS resources |
+| Node.js and npm | 22 | tests and the Lambda zip |
+| Docker | any recent | builds the web and API images |
+| kubectl | within one version of the cluster (EKS 1.35) | deploys to Kubernetes |
+| Helm | 3 | installs Prometheus + Grafana |
+| `envsubst` | from `gettext` (`apt install gettext-base`, `brew install gettext`) | fills the `${NAMES}` in `k8s/*.yaml` |
+| `zip`, `curl`, `openssl`, `bash` | | scripts |
+
+Use Linux, macOS or WSL. The scripts are bash.
+
+### 1. Log in to AWS and set the settings
+
+Use an IAM user in a sandbox account (the same kind of key as the pipeline: `AdministratorAccess` is the simplest). The identity that runs `terraform apply` becomes the EKS cluster admin, so use the same one for the whole deployment.
+
+```bash
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION=us-east-1
+export PROJECT_NAME=paywave
+export ENVIRONMENT=prod
+aws sts get-caller-identity          # must print your account id
+
+# Email settings (optional). Leave SMTP_HOST empty to skip real emails; sign-up codes then go to the pod log (step 9).
+export TF_VAR_project_name=$PROJECT_NAME TF_VAR_environment=$ENVIRONMENT TF_VAR_aws_region=$AWS_REGION
+export TF_VAR_dr_region=us-west-2       # second region for the backup copy; must differ from AWS_REGION (see Backup and disaster recovery)
+export TF_VAR_smtp_host="smtp.gmail.com"  TF_VAR_smtp_port=587
+export TF_VAR_smtp_user="you@gmail.com"   TF_VAR_smtp_password="your-app-password"
+export TF_VAR_smtp_from="PayWave <you@gmail.com>"
+export TF_VAR_alert_email="you@example.com"    # CloudWatch alarm emails (confirm the AWS email)
+```
+
+### 2. Run the tests and build the Lambda package
+
+```bash
+(cd backend && npm ci && npm test)
+node --test frontend/test/*.test.js
+bash scripts/build-lambda.sh          # creates backend/dist/lambda.zip
+```
+
+Terraform needs `lambda.zip` to exist before it can plan, so do not skip the build.
+
+### 3. Create the Terraform state bucket (first time only)
+
+```bash
+bash scripts/bootstrap-state.sh       # prints the bucket name: paywave-tfstate-<account-id>-<region>
+export STATE_BUCKET=paywave-tfstate-$(aws sts get-caller-identity --query Account --output text)-$AWS_REGION
+```
+
+The script is safe to run again. The bucket keeps Terraform's memory of what exists and a lock file.
+
+### 4. Create all AWS resources with Terraform (25-35 minutes the first time)
+
+```bash
+cd terraform
+terraform init -input=false \
+  -backend-config="bucket=$STATE_BUCKET" \
+  -backend-config="key=$PROJECT_NAME/$ENVIRONMENT/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="use_lockfile=true" \
+  -backend-config="encrypt=true"
+terraform validate
+terraform plan -out=tfplan            # read what will be created
+terraform apply tfplan                # EKS and RDS are the slow parts
+```
+
+This creates the VPC, subnets, NAT, EKS, RDS, Lambda, API Gateway, EventBridge, CloudFront, the NLB, S3, ECR, IAM, Secrets Manager and CloudWatch. Then read the results into shell variables for the next steps:
+
+```bash
+export API_URL=$(terraform output -raw api_url)
+export CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+export ECR_URL=$(terraform output -raw ecr_repository_url)
+export ECR_API_URL=$(terraform output -raw ecr_backend_repository_url)
+export FRONTEND_BUCKET=$(terraform output -raw frontend_bucket)
+export API_POD_ROLE_ARN=$(terraform output -raw api_pod_role_arn)
+export DB_HOST=$(terraform output -raw db_host)
+export DB_USER=$(terraform output -raw db_user)
+export DB_NAME=$(terraform output -raw db_name)
+export DB_SECRET_ARN=$(terraform output -raw db_secret_arn)
+export APP_SECRET_ARN=$(terraform output -raw app_secret_arn)
+export GRAFANA_ROLE_ARN=$(terraform output -raw grafana_role_arn)
+export CLOUDFRONT_DOMAIN=$(terraform output -raw cloudfront_domain)
+export ORIGIN_VERIFY=$(terraform output -raw origin_verify_secret)   # secret: do not paste it anywhere
+cd ..
+```
+
+### 5. Build the two images and push them to ECR
+
+```bash
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
+TAG=$(git rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M)    # any unique tag
+export IMAGE="$ECR_URL:$TAG"  API_IMAGE="$ECR_API_URL:$TAG"
+
+docker build --platform linux/amd64 -t "$IMAGE"     -t "$ECR_URL:latest"     frontend   # website (nginx)
+docker build --platform linux/amd64 -t "$API_IMAGE" -t "$ECR_API_URL:latest" backend    # API (Node.js)
+docker push "$IMAGE";     docker push "$ECR_URL:latest"
+docker push "$API_IMAGE"; docker push "$ECR_API_URL:latest"
+```
+
+`--platform linux/amd64` matters on Apple Silicon, because the EKS servers are x86.
+
+### 6. Copy the static files to S3
+
+```bash
+rm -rf /tmp/site && mkdir -p /tmp/site && cp -r frontend/public/. /tmp/site/
+printf 'window.APP_CONFIG = {\n  API_BASE_URL: "/api",\n  PAYMENTS_API_URL: "%s",\n};\n' "$API_URL" > /tmp/site/config.js
+aws s3 sync /tmp/site "s3://$FRONTEND_BUCKET/site/" --delete
+```
+
+This is a versioned copy of the release. The website you open is served by the nginx pods, which have the same files inside the image.
+
+### 7. Deploy the app to Kubernetes
+
+```bash
+export PAYMENTS_API_URL="$API_URL"
+export LOG_OTP_WITHOUT_SMTP=$([ -z "${TF_VAR_smtp_host:-}" ] && echo true || echo false)
+bash scripts/deploy-k8s.sh
+```
+
+The script points `kubectl` at the cluster, installs metrics-server, deploys the API pods first (their start-up runs the database migrations), creates the secret nginx uses to accept only CloudFront traffic, then deploys the web pods. If it fails, it prints the pod status and logs.
+
+### 8. Check that everything answers
+
+```bash
+curl -fsS "$API_URL/health?deep=1"                      # payments API (Lambda) + database
+curl -fsS "https://$CLOUDFRONT_DOMAIN/healthz"          # website through CloudFront
+curl -fsS "https://$CLOUDFRONT_DOMAIN/api/health?deep=1" # API pods through nginx
+kubectl -n paywave get pods
+```
+
+A new CloudFront distribution can take up to 20 minutes to reach every edge location, so retry the last two commands a few times. Then open `https://$CLOUDFRONT_DOMAIN`.
+
+### 9. Sign-up codes without SMTP
+
+If you set no SMTP values, read the 6 digit code from the API pod log right after pressing *Register* (valid 10 minutes):
+
+```bash
+kubectl -n paywave logs -l app=paywave-api --tail=200 | grep -i otp
+```
+
+### 10. Install Prometheus + Grafana (optional, about 10 minutes)
+
+```bash
+export GRAFANA_ADMIN_PASSWORD='choose-a-strong-password'   # optional; if unset a random one is created
+bash scripts/deploy-monitoring.sh                          # prints the Grafana address; user: admin
+kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo   # the generated password
+```
+
+### Updating after a code change
+
+- **Website or API code:** repeat step 5 with a new `TAG`, step 6, then step 7 (it rolls the pods to the new image).
+- **Payments (Lambda) code:** repeat step 2 (`build-lambda.sh`), then `terraform apply` in step 4. Terraform only replaces the function when the zip content changed.
+- **Infrastructure:** edit `terraform/*.tf` and run `terraform plan` then `terraform apply`.
+
+### Tearing everything down
+
+```bash
+bash scripts/destroy.sh               # removes Grafana, the app namespace, then runs terraform destroy
+```
+
+Run it from a shell where steps 1 and 4 (`terraform init`) were done in `terraform/`, and where `backend/dist/lambda.zip` exists (`touch backend/dist/lambda.zip` is enough). The state bucket is kept on purpose; delete it by hand if you want it gone:
+
+```bash
+aws s3 rb "s3://$STATE_BUCKET" --force   # also removes all stored versions only if versioning cleanup is done, see the AWS docs
+```
+
+### If something goes wrong
+
+| Symptom | What to check |
+|---|---|
+| `terraform init` cannot find the bucket | Step 3 not run, or `AWS_REGION` differs from the one used for the bucket |
+| `terraform plan` says the zip file is missing | Run `bash scripts/build-lambda.sh` |
+| `kubectl` says unauthorized | Use the same AWS identity that ran `terraform apply`, or add yours as an EKS access entry |
+| Pods `ImagePullBackOff` | The images were not pushed, or were built for the wrong CPU type (use `--platform linux/amd64`) |
+| Website returns 403 | You called the load balancer directly. Use the CloudFront address; only it sends the secret header |
+| CloudFront returns 502 or 504 right after deploy | Wait a few minutes; the load balancer is still finding healthy servers |
+| `envsubst: command not found` | Install `gettext` |
+
+## Backup and disaster recovery
+
+All user data (accounts, balances, the ledger, notifications, AutoPay) is in the RDS database. Everything else is rebuilt from Git, Terraform and ECR, so the database is what gets backed up. Terraform (`terraform/backup.tf`, `rds.tf`) sets up four layers, with nothing to switch on:
+
+| Layer | What it does | Default |
+|---|---|---|
+| RDS automated backups | Continuous log backup, so you can restore to any second inside the window (point-in-time recovery) | 14 days (`db_backup_retention_days`, 1 to 35) |
+| AWS Backup, daily | A snapshot at 19:30 UTC (01:00 IST) into the vault `paywave-prod-vault` | kept 35 days (`backup_retention_days`) |
+| AWS Backup, monthly | A snapshot on the 1st of each month | kept 365 days (`backup_monthly_retention_days`) |
+| Disaster recovery copy | Every AWS Backup snapshot is copied to a second region, vault `paywave-prod-vault-dr` | on, `us-west-2` (`enable_dr_copy`, `dr_region`) |
+| Final snapshot + deletion protection | A snapshot is taken when the database is deleted and is **kept after `destroy`**; deletion protection blocks deleting it by mistake in the console or CLI | on (`db_skip_final_snapshot = false`, `db_deletion_protection = true`) |
+
+The backup vaults and the SNS topic `paywave-prod-backup-events` email `ALERT_EMAIL` when a backup or a copy fails and when a restore finishes (confirm the AWS subscription email).
+
+Good to know:
+- **Recovery targets:** point-in-time recovery loses at most a few minutes of data; a restore from a daily snapshot loses up to 24 hours; a region loss restored from the DR copy loses up to 24 hours.
+- **Restores never overwrite.** A restore always creates a **new** database from the backup. You then point the app at it (below).
+- **`destroy` deletes the vaults and their backups** (`force_destroy`), because a destroy means "remove everything". The RDS **final snapshot stays**, so you can still bring the data back. Delete it by hand when you really do not want it.
+- **Pipeline users:** the AWS user needs permission in the DR region too (`AdministratorAccess` has it). If your main region is `us-west-2`, the pipeline uses `us-east-1` as the DR region automatically; set the repository variable `DR_REGION` to choose another.
+- Cost: AWS Backup snapshot storage and the cross-region copy are billed per GB; for a small database that is a few dollars a month.
+- **Key to save:** the database backup alone is not enough for card data; see *The one secret you must keep* below.
+- **Not covered:** this protects against deleted or damaged data, a failed database and a lost region. It is not a licensed bank-grade DR plan, and a restore has not been tried on this project yet. **Do a test restore (below) once before you rely on it.**
+
+### Restore options
+
+Pick the case that matches what went wrong. Replace `paywave-prod` if you changed the names, and run the commands from your own shell with the same AWS login.
+
+**A. Someone deleted or corrupted data an hour ago (point-in-time recovery).** Restore a copy of the database as it was just before the mistake, then read the good rows out of it.
+
+```bash
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier paywave-prod-pg \
+  --target-db-instance-identifier paywave-prod-pg-restored \
+  --restore-time 2026-11-27T05:30:00Z \
+  --db-subnet-group-name $(aws rds describe-db-instances --db-instance-identifier paywave-prod-pg \
+      --query 'DBInstances[0].DBSubnetGroup.DBSubnetGroupName' --output text) \
+  --vpc-security-group-ids $(aws rds describe-db-instances --db-instance-identifier paywave-prod-pg \
+      --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' --output text) \
+  --no-publicly-accessible
+aws rds wait db-instance-available --db-instance-identifier paywave-prod-pg-restored
+```
+
+The new instance has its own address (`aws rds describe-db-instances --db-instance-identifier paywave-prod-pg-restored --query 'DBInstances[0].Endpoint.Address'`). Connect from a pod (`kubectl -n paywave run psql --rm -it --image=postgres:16 -- psql -h <address> -U paywave_admin paywave`), check the data, and copy the rows you need back with `pg_dump`/`psql`. Delete the restored instance when you are done. The time is UTC.
+
+**B. The database is lost or broken: restore the whole database from a snapshot with Terraform.**
+
+1. Find a snapshot. The most recent AWS Backup snapshots are RDS snapshots named `awsbackup:job-...`; a destroy leaves `paywave-prod-pg-final-<id>`:
+
+   ```bash
+   aws rds describe-db-snapshots --snapshot-type awsbackup \
+     --query 'reverse(sort_by(DBSnapshots,&SnapshotCreateTime))[].[DBSnapshotIdentifier,SnapshotCreateTime]' --output table
+   aws rds describe-db-snapshots --snapshot-type manual \
+     --query 'DBSnapshots[?contains(DBSnapshotIdentifier,`final`)].[DBSnapshotIdentifier,SnapshotCreateTime]' --output table
+   ```
+
+2. Replace the database from that snapshot, from the `terraform/` folder (after `terraform init`, see *Manual deployment*, step 4):
+
+   ```bash
+   # the database is deleted and recreated from the snapshot; it takes a final snapshot of the damaged one first
+   terraform apply -replace=aws_db_instance.this -var 'db_snapshot_identifier=awsbackup:job-XXXX'
+   ```
+
+   With the pipeline, add the secret/variable the same way: set `TF_VAR_db_snapshot_identifier` in the `Terraform apply` step of `deploy.yml` for one run, then remove it. The new database keeps the same name (`paywave-prod-pg`) but has a new address, so afterwards **re-run the deploy** (or steps 4 to 7 of *Manual deployment*) so the API pods and Lambda pick up the new `DB_HOST` and password secret.
+
+3. Check `curl -fsS "$API_URL/health?deep=1"` and sign in.
+
+**C. The whole region is lost (disaster recovery).** The DR vault in the second region holds copies of the snapshots.
+
+1. In the DR region, find the newest snapshot and note its name:
+
+   ```bash
+   aws rds describe-db-snapshots --region us-west-2 --snapshot-type awsbackup \
+     --query 'reverse(sort_by(DBSnapshots,&SnapshotCreateTime))[0].DBSnapshotIdentifier' --output text
+   ```
+
+2. Read the key copy (see *The one secret you must keep*), then deploy PayWave in that region from the same repository: set the repository variable `AWS_REGION` to the DR region (and `DR_REGION` to another region), then run the deploy once with `TF_VAR_jwt_secret` and `TF_VAR_db_snapshot_identifier` set to the snapshot name from step 1 (a manual run works the same: `export AWS_REGION=us-west-2` and follow *Manual deployment* with that variable). This builds the whole stack there and loads your data. It takes the same 25 to 35 minutes as a first deploy.
+3. The address changes (a new `*.cloudfront.net`), so tell users the new link. A custom domain would let you switch with a DNS change instead.
+
+### The one secret you must keep: the encryption key
+
+Card numbers and CVVs in the database are encrypted with the app's key (`jwt_secret`, generated once by Terraform and kept in Secrets Manager and in the Terraform state). It also signs login tokens and hashes the sign-up codes. **A database backup is only readable for cards if you still have this key.** A new deployment generates a *new* key, so restoring a snapshot into a fresh stack without the old key leaves existing cards unreadable (accounts, balances and history still work; people would have to be issued new cards).
+
+- **Normal case (restore in the same stack, option A or B):** nothing to do, the key is unchanged.
+- **Region lost (option C):** a copy of the key is kept for you in the DR region as the secret `paywave-prod/jwt-key-backup`. Read it there and pass it to the new deploy:
+
+  ```bash
+  export TF_VAR_jwt_secret=$(aws secretsmanager get-secret-value --region us-west-2 \
+      --secret-id paywave-prod/jwt-key-backup --query SecretString --output text)
+  ```
+
+- **After a `destroy`:** the key is deleted with the stack, so a rebuild from the final snapshot cannot recover it. **Save the key once, now, somewhere safe** (a password manager, not Git):
+
+  ```bash
+  aws secretsmanager get-secret-value --secret-id paywave-prod/app-config --query SecretString --output text | jq -r .jwt_secret
+  ```
+
+  To rebuild from the final snapshot later, pass that value as `TF_VAR_jwt_secret` together with `TF_VAR_db_snapshot_identifier`. In the pipeline, store the saved key as a repository secret named `JWT_SECRET` (the *Terraform apply* step already passes it; leave the secret unset for normal deploys).
+
+**Test it once.** In a spare moment run option A with a `--restore-time` from a few hours ago, connect, count the rows in `users` and `transactions`, then delete the test instance (`aws rds delete-db-instance --db-instance-identifier paywave-prod-pg-restored --skip-final-snapshot`). A backup you have never restored is only a hope.
 
 ## Monitoring (Prometheus + Grafana)
 
@@ -156,7 +444,7 @@ node --test frontend/test/*.test.js     # QR encoder/decoder tests
 
 ## Cost warning
 
-This is a real EKS + NAT + RDS stack. Rough estimate: **about $235-285 per month (~$0.35 per hour)** in `us-east-1`: EKS control plane ~$73, three `t3.medium` nodes ~$90 (a third node was added for Prometheus/Grafana), NAT gateway ~$35, one NLB behind CloudFront ~$17 and one NLB for Grafana ~$17 (CloudFront itself is ~free at demo traffic), RDS `db.t3.micro` ~$15-20, the rest is small. Run **Actions > Destroy PayWave** (type `DESTROY`) when you are done. The Terraform state bucket (`paywave-tfstate-<account>-<region>`) is kept on purpose; delete it by hand if you want it gone.
+This is a real EKS + NAT + RDS stack. Rough estimate: **about $235-285 per month (~$0.35 per hour)** in `us-east-1`: EKS control plane ~$73, three `t3.medium` nodes ~$90 (a third node was added for Prometheus/Grafana), NAT gateway ~$35, one NLB behind CloudFront ~$17 and one NLB for Grafana ~$17 (CloudFront itself is ~free at demo traffic), RDS `db.t3.micro` ~$15-20, the rest is small. Run **Actions > Destroy PayWave** (type `DESTROY`) when you are done. The Terraform state bucket (`paywave-tfstate-<account>-<region>`) and the database's final snapshot are kept on purpose; delete it by hand if you want it gone.
 
 ## Before this handles real money
 
@@ -166,7 +454,7 @@ This is a working demo, not a licensed payment product.
 - **Mobile numbers are not verified by SMS.** Someone could register a number that is not theirs before the real owner does. Real products verify by OTP to the number (SMS in India needs DLT registration) before allowing payments to it.
 - **The camera scanner needs HTTPS.** Photo/upload scanning works on plain HTTP; live camera does not (browser rule).
 - **The address is a `*.cloudfront.net` name.** It is HTTPS already (CloudFront's certificate). For your own domain, add an ACM certificate in `us-east-1` and an alias on the distribution, then set `cors_allowed_origin` to that domain. The load balancer behind CloudFront is plain HTTP inside AWS and refuses any request that lacks CloudFront's secret header.
-- Other hardening to consider: AWS WAF on API Gateway, RDS Proxy and Multi-AZ (`db_multi_az = true`), `db_deletion_protection = true`, one NAT gateway per AZ, pinning the RDS CA bundle in `backend/src/db.js`, GitHub OIDC instead of long-lived AWS keys, a private EKS endpoint with a self-hosted runner.
+- Other hardening to consider: AWS WAF on API Gateway, RDS Proxy and Multi-AZ (`db_multi_az = true`), one NAT gateway per AZ, pinning the RDS CA bundle in `backend/src/db.js`, GitHub OIDC instead of long-lived AWS keys, a private EKS endpoint with a self-hosted runner.
 - The pipeline user becomes EKS cluster admin. If you later deploy with a different AWS identity, add it with an EKS access entry.
 
 ## Verification status
@@ -177,6 +465,7 @@ Tested in a sandbox (no AWS account was available there):
 - **Frontend:** 8 QR tests pass. The real web app code was driven in a simulated browser (jsdom) against the real backend: add money with no card fields, the Cards panel (masked, reveal with password, hide), Send defaulting to Wallet with the CVV field appearing only when a card is chosen, a credit card payment, paying the bill, and the history, with zero JavaScript errors.
 - **nginx:** the real `nginx.conf` was run: direct requests without CloudFront's secret header get 403 (a wrong header and a suffix trick too), `/healthz` stays open, `/api` is proxied.
 - **Kubernetes:** all manifests, including the Prometheus ServiceMonitor and alert rules, pass strict schema validation (kubeconform). Shell scripts pass ShellCheck.
+- **Backup and recovery:** the Terraform in `backup.tf` and the changes in `rds.tf`, the restore commands in this README and `scripts/destroy.sh` were written from the AWS provider documentation and **have not been applied or restored against a real AWS account**. Run the test restore in *Backup and disaster recovery* once after your first deploy, and restoring a snapshot with Terraform (option B) once before you depend on it.
 - **Terraform:** formatted and parsed; the module outputs and provider arguments used by `cloudfront.tf` were checked against the module source and the AWS provider docs. **`terraform apply`, the Docker builds and Helm were not run (the Grafana chart version falls back to the newest chart if the pinned one does not exist)**, so the first pipeline run is the real test of CloudFront, the NLB, the Grafana chart and cluster networking.
 
 - **UI (v9, "stage" landing page):** a cream-to-lilac gradient stage with a giant PAYWAVE headline behind a phone mockup, floating glass notification chips, dark pill buttons, a glass sign-up card, a centred top nav (How it works, Features, Questions), glass cards and a pastel balance card on the dashboard, and a deep-purple dark mode. Rendered in Chromium with the strict Content-Security-Policy in light, dark and phone width with zero console errors.

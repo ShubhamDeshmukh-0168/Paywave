@@ -193,7 +193,7 @@
       h('div', { class: 'giant', 'aria-hidden': 'true' }, h('span', { class: 'g1' }, 'PAY'), h('span', { class: 'g2' }, 'WAVE')),
       phone,
       h('div', { class: 'stage-left' },
-        h('h1', {}, 'A more human way ', h('em', {}, 'to pay.')),
+        h('h1', {}, 'A more way ', h('em', {}, 'to pay.')),
         h('p', { class: 'sub' }, 'Your mobile number is your payment ID. Add money in one tap, send and receive in seconds, scan a QR, recharge your phone and set up AutoPay. You also get your own debit and credit card.'),
         h('div', { class: 'cta' },
           h('button', { class: 'big', type: 'button', onclick: () => focusAuth('register') }, 'Create free wallet'),
