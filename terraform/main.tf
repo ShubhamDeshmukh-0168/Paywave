@@ -83,7 +83,7 @@ resource "aws_security_group" "lambda" {
 resource "aws_security_group" "rds" {
   tags = {
     Name    = "${local.name}-rds-sg"
-    Purpose = "Security group for the PostgreSQL database (Lambda and EKS nodes only)"
+    Purpose = "Security group for the PostgreSQL database - Lambda and EKS nodes only"
   }
 
   name_prefix = "${local.name}-rds-"

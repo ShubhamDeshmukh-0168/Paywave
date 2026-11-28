@@ -1,7 +1,7 @@
 resource "aws_api_gateway_rest_api" "this" {
   tags = {
     Name    = "${local.name}-api-gateway"
-    Purpose = "REST API for payment routes, proxied to Lambda"
+    Purpose = "REST API for payment routes - proxied to Lambda"
   }
 
   name        = "${local.name}-api"

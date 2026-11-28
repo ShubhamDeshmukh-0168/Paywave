@@ -17,7 +17,7 @@ locals {
 resource "aws_secretsmanager_secret" "app" {
   tags = {
     Name    = "${local.name}-app-config-secret"
-    Purpose = "Database login, JWT key and app settings"
+    Purpose = "Database login - JWT key and app settings"
   }
 
   name                    = "${local.name}/app-config"

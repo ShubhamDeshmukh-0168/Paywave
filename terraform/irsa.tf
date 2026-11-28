@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "api_pod_assume" {
 resource "aws_iam_role" "api_pod" {
   tags = {
     Name    = "${local.name}-api-pod-role"
-    Purpose = "IAM role assumed by the API pods (IRSA)"
+    Purpose = "IAM role assumed by the API pods - IRSA"
   }
 
   name               = "${local.name}-api-pod"

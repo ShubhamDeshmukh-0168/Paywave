@@ -24,7 +24,7 @@ provider "aws" {
 resource "aws_backup_vault" "main" {
   tags = {
     Name    = "${local.name}-backup-vault"
-    Purpose = "AWS Backup vault (primary region)"
+    Purpose = "AWS Backup vault - primary region"
   }
 
   name          = "${local.name}-vault"
@@ -34,7 +34,7 @@ resource "aws_backup_vault" "main" {
 resource "aws_backup_vault" "dr" {
   tags = {
     Name    = "${local.name}-backup-vault-dr"
-    Purpose = "AWS Backup vault (disaster recovery region)"
+    Purpose = "AWS Backup vault - disaster recovery region"
   }
 
   provider      = aws.dr

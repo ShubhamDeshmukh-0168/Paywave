@@ -6,7 +6,7 @@ resource "random_id" "db_final" {
 resource "aws_db_instance" "this" {
   tags = {
     Name    = "${local.name}-postgres-db"
-    Purpose = "PostgreSQL 16 database (all wallet data)"
+    Purpose = "PostgreSQL 16 database - all wallet data"
   }
 
   identifier = "${local.name}-pg"

@@ -49,7 +49,7 @@ module "eks" {
       launch_template_name     = "${local.name}-node-template"
       launch_template_use_name_prefix = false
       launch_template_tags     = { Name = "${local.name}-node" }
-      tags                     = { Purpose = "EKS worker node (runs web and API pods)" }
+      tags                     = { Purpose = "EKS worker node - runs web and API pods" }
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = var.node_instance_types
       min_size       = var.node_min_size
