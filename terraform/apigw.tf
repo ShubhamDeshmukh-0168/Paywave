@@ -1,4 +1,9 @@
 resource "aws_api_gateway_rest_api" "this" {
+  tags = {
+    Name    = "${local.name}-api-gateway"
+    Purpose = "REST API for payment routes, proxied to Lambda"
+  }
+
   name        = "${local.name}-api"
   description = "PayWave payments API (Lambda)"
 
@@ -78,11 +83,21 @@ resource "aws_api_gateway_deployment" "this" {
 }
 
 resource "aws_cloudwatch_log_group" "apigw_access" {
+  tags = {
+    Name    = "${local.name}-apigw-access-logs"
+    Purpose = "API Gateway access logs"
+  }
+
   name              = "/aws/apigateway/${local.name}-access"
   retention_in_days = var.log_retention_days
 }
 
 resource "aws_api_gateway_stage" "this" {
+  tags = {
+    Name    = "${local.name}-api-stage"
+    Purpose = "API Gateway stage"
+  }
+
   rest_api_id   = aws_api_gateway_rest_api.this.id
   deployment_id = aws_api_gateway_deployment.this.id
   stage_name    = var.environment

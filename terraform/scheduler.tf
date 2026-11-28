@@ -1,6 +1,11 @@
 # Runs due AutoPay payments: EventBridge invokes the same Lambda every 5 minutes with a
 # scheduled event, which backend/src/index.js routes to autopay.runDue().
 resource "aws_cloudwatch_event_rule" "autopay" {
+  tags = {
+    Name    = "${local.name}-autopay-schedule"
+    Purpose = "EventBridge rule: runs AutoPay every 5 minutes"
+  }
+
   name                = "${local.name}-autopay"
   description         = "Run due AutoPay payments"
   schedule_expression = "rate(5 minutes)"

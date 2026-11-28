@@ -19,6 +19,11 @@ resource "random_password" "origin_verify" {
 
 # ---- NLB -> nodes
 resource "aws_lb" "web" {
+  tags = {
+    Name    = "${local.name}-web-nlb"
+    Purpose = "Network load balancer in front of the web pods"
+  }
+
   name                             = "${local.name}-web"
   load_balancer_type               = "network"
   internal                         = false
@@ -27,6 +32,11 @@ resource "aws_lb" "web" {
 }
 
 resource "aws_lb_target_group" "web" {
+  tags = {
+    Name    = "${local.name}-web-tg"
+    Purpose = "Target group: EKS nodes on the nginx NodePort"
+  }
+
   name        = "${local.name}-web"
   port        = local.web_node_port
   protocol    = "TCP"
@@ -88,6 +98,11 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
 }
 
 resource "aws_cloudfront_distribution" "web" {
+  tags = {
+    Name    = "${local.name}-web-cdn"
+    Purpose = "CloudFront: public HTTPS entry for the website and API"
+  }
+
   enabled             = true
   is_ipv6_enabled     = true
   http_version        = "http2and3"

@@ -1,9 +1,19 @@
 resource "aws_cloudwatch_log_group" "lambda" {
+  tags = {
+    Name    = "${local.name}-lambda-logs"
+    Purpose = "Lambda function logs"
+  }
+
   name              = "/aws/lambda/${local.name}-api"
   retention_in_days = var.log_retention_days
 }
 
 resource "aws_lambda_function" "api" {
+  tags = {
+    Name    = "${local.name}-payments-lambda"
+    Purpose = "Payments API and AutoPay runner"
+  }
+
   function_name = "${local.name}-api"
   role          = aws_iam_role.lambda.arn
   runtime       = "nodejs22.x"

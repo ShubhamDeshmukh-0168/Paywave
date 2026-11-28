@@ -2,6 +2,11 @@
 # The pipeline syncs frontend/public here on every deploy; the same files are
 # baked into the container image that Kubernetes serves.
 resource "aws_s3_bucket" "frontend" {
+  tags = {
+    Name    = "${local.name}-frontend-bucket"
+    Purpose = "S3 bucket for frontend files"
+  }
+
   bucket        = "${local.name}-frontend-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }

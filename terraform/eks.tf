@@ -13,6 +13,16 @@ module "eks" {
   # (still protected by IAM authentication).
   cluster_endpoint_public_access = true
 
+  # Readable names in the IAM / EC2 consoles
+  iam_role_name                          = "${local.name}-eks-cluster-role"
+  iam_role_use_name_prefix               = false
+  cluster_security_group_name            = "${local.name}-eks-cluster-sg"
+  cluster_security_group_use_name_prefix = false
+  node_security_group_name               = "${local.name}-eks-nodes-sg"
+  node_security_group_use_name_prefix    = false
+  cluster_security_group_tags            = { Name = "${local.name}-eks-cluster-sg" }
+  node_security_group_tags               = { Name = "${local.name}-eks-nodes-sg" }
+
   # Whoever runs this Terraform (the IAM identity behind your GitHub secrets)
   # becomes cluster admin, which is what lets the pipeline deploy workloads.
   enable_cluster_creator_admin_permissions = true
@@ -31,6 +41,15 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
+      # Node group, role and EC2 instances all show up as paywave-prod-node*
+      name                     = "${local.name}-nodes"
+      use_name_prefix          = false
+      iam_role_name            = "${local.name}-eks-node-role"
+      iam_role_use_name_prefix = false
+      launch_template_name     = "${local.name}-node-template"
+      launch_template_use_name_prefix = false
+      launch_template_tags     = { Name = "${local.name}-node" }
+      tags                     = { Purpose = "EKS worker node (runs web and API pods)" }
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = var.node_instance_types
       min_size       = var.node_min_size

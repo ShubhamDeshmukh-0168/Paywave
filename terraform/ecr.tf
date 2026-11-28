@@ -1,4 +1,9 @@
 resource "aws_ecr_repository" "frontend" {
+  tags = {
+    Name    = "${local.name}-frontend-repo"
+    Purpose = "Container images: nginx web app"
+  }
+
   name                 = "${local.name}-frontend"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
@@ -30,6 +35,11 @@ resource "aws_ecr_lifecycle_policy" "frontend" {
 }
 
 resource "aws_ecr_repository" "backend" {
+  tags = {
+    Name    = "${local.name}-backend-repo"
+    Purpose = "Container images: API pods"
+  }
+
   name                 = "${local.name}-backend"
   image_tag_mutability = "MUTABLE"
   force_delete         = true

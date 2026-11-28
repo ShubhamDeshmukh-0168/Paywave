@@ -1,4 +1,9 @@
 resource "aws_sns_topic" "alerts" {
+  tags = {
+    Name    = "${local.name}-alerts"
+    Purpose = "SNS topic for alarm emails"
+  }
+
   name = "${local.name}-alerts"
 }
 
@@ -11,6 +16,11 @@ resource "aws_sns_topic_subscription" "email" {
 
 # ------------------------------------------------------------------ Alarms
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  tags = {
+    Name    = "${local.name}-lambda-errors-alarm"
+    Purpose = "CloudWatch alarm: lambda errors"
+  }
+
   alarm_name          = "${local.name}-lambda-errors"
   alarm_description   = "Lambda reported errors"
   namespace           = "AWS/Lambda"
@@ -27,6 +37,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
+  tags = {
+    Name    = "${local.name}-lambda-throttles-alarm"
+    Purpose = "CloudWatch alarm: lambda throttles"
+  }
+
   alarm_name          = "${local.name}-lambda-throttles"
   namespace           = "AWS/Lambda"
   metric_name         = "Throttles"
@@ -41,6 +56,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
+  tags = {
+    Name    = "${local.name}-lambda-duration-alarm"
+    Purpose = "CloudWatch alarm: lambda duration"
+  }
+
   alarm_name          = "${local.name}-lambda-slow"
   alarm_description   = "p95 duration above 10s"
   namespace           = "AWS/Lambda"
@@ -56,6 +76,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  tags = {
+    Name    = "${local.name}-api-5xx-alarm"
+    Purpose = "CloudWatch alarm: api 5xx"
+  }
+
   alarm_name  = "${local.name}-api-5xx"
   namespace   = "AWS/ApiGateway"
   metric_name = "5XXError"
@@ -73,6 +98,11 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "rds_cpu" {
+  tags = {
+    Name    = "${local.name}-rds-cpu-alarm"
+    Purpose = "CloudWatch alarm: rds cpu"
+  }
+
   alarm_name          = "${local.name}-rds-cpu"
   namespace           = "AWS/RDS"
   metric_name         = "CPUUtilization"
@@ -86,6 +116,11 @@ resource "aws_cloudwatch_metric_alarm" "rds_cpu" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "rds_storage" {
+  tags = {
+    Name    = "${local.name}-rds-storage-alarm"
+    Purpose = "CloudWatch alarm: rds storage"
+  }
+
   alarm_name          = "${local.name}-rds-free-storage"
   namespace           = "AWS/RDS"
   metric_name         = "FreeStorageSpace"
@@ -99,6 +134,11 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "rds_connections" {
+  tags = {
+    Name    = "${local.name}-rds-connections-alarm"
+    Purpose = "CloudWatch alarm: rds connections"
+  }
+
   alarm_name          = "${local.name}-rds-connections"
   namespace           = "AWS/RDS"
   metric_name         = "DatabaseConnections"

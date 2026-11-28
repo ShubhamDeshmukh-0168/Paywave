@@ -22,11 +22,21 @@ provider "aws" {
 
 # ---- vaults (where the backups live)
 resource "aws_backup_vault" "main" {
+  tags = {
+    Name    = "${local.name}-backup-vault"
+    Purpose = "AWS Backup vault (primary region)"
+  }
+
   name          = "${local.name}-vault"
   force_destroy = true # the destroy workflow must be able to remove the vault; the RDS final snapshot is kept
 }
 
 resource "aws_backup_vault" "dr" {
+  tags = {
+    Name    = "${local.name}-backup-vault-dr"
+    Purpose = "AWS Backup vault (disaster recovery region)"
+  }
+
   provider      = aws.dr
   count         = var.enable_dr_copy ? 1 : 0
   name          = "${local.name}-vault-dr"
@@ -45,6 +55,11 @@ data "aws_iam_policy_document" "backup_assume" {
 }
 
 resource "aws_iam_role" "backup" {
+  tags = {
+    Name    = "${local.name}-backup-role"
+    Purpose = "IAM role used by AWS Backup"
+  }
+
   name               = "${local.name}-backup"
   assume_role_policy = data.aws_iam_policy_document.backup_assume.json
 }
@@ -61,6 +76,11 @@ resource "aws_iam_role_policy_attachment" "restore" {
 
 # ---- the plan: when to back up, how long to keep, where to copy
 resource "aws_backup_plan" "db" {
+  tags = {
+    Name    = "${local.name}-db-backup-plan"
+    Purpose = "Daily and monthly database backups"
+  }
+
   name = "${local.name}-db"
 
   rule {
@@ -117,6 +137,11 @@ resource "aws_backup_selection" "db" {
 
 # ---- email when a backup or a copy fails, and when a restore finishes
 resource "aws_sns_topic" "backup" {
+  tags = {
+    Name    = "${local.name}-backup-events"
+    Purpose = "SNS topic for backup job events"
+  }
+
   name = "${local.name}-backup-events"
 }
 

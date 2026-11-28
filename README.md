@@ -253,6 +253,37 @@ aws s3 rb "s3://$STATE_BUCKET" --force   # also removes all stored versions only
 | CloudFront returns 502 or 504 right after deploy | Wait a few minutes; the load balancer is still finding healthy servers |
 | `envsubst: command not found` | Install `gettext` |
 
+## Resource names in the AWS console
+
+Everything Terraform creates is named `paywave-prod-<what-it-is>` (`<project>-<environment>-...`). Resources that show a **Name** column (EC2, VPC) carry a `Name` tag, and every resource also has a `Purpose` tag explaining what it does. Filter any console page by `paywave-prod`.
+
+| Console | Name you will see | What it is |
+|---|---|---|
+| VPC | `paywave-prod-vpc` | The network |
+| VPC > Subnets | `paywave-prod-public-<az>`, `-private-<az>`, `-database-<az>` | Load balancer + NAT, nodes + Lambda, database |
+| VPC | `paywave-prod-igw`, `-nat`, `-nat-eip` | Internet gateway, NAT gateway and its IP |
+| VPC > Route tables | `paywave-prod-public-rt`, `-private-rt`, `-database-rt` | Routing |
+| EC2 > Security groups | `paywave-prod-lambda-sg`, `-rds-sg`, `-eks-cluster-sg`, `-eks-nodes-sg` | Firewalls |
+| EC2 > Instances | `paywave-prod-node` (x3) | EKS worker nodes |
+| EC2 > Load balancers | `paywave-prod-web` / target group `paywave-prod-web` | NLB for the web pods |
+| EKS | `paywave-prod` / node group `paywave-prod-nodes` | Kubernetes cluster |
+| CloudFront | comment `paywave-prod web app` (Name tag `paywave-prod-web-cdn`) | Public HTTPS entry |
+| API Gateway | `paywave-prod-api` (stage `prod`) | Payments REST API |
+| Lambda | `paywave-prod-api` | Payments + AutoPay function |
+| EventBridge | `paywave-prod-autopay` | Runs AutoPay every 5 minutes |
+| RDS | `paywave-prod-pg` | PostgreSQL database |
+| S3 | `paywave-prod-frontend-<account-id>` | Frontend files |
+| ECR | `paywave-prod-frontend`, `paywave-prod-backend` | Container images |
+| Secrets Manager | `paywave-prod/app-config`, `paywave-prod/jwt-key-backup` | DB login, JWT key |
+| IAM > Roles | `paywave-prod-lambda`, `-apigw-cloudwatch`, `-api-pod`, `-grafana`, `-backup`, `-eks-cluster-role`, `-eks-node-role` | Permissions per component |
+| SNS | `paywave-prod-alerts`, `paywave-prod-backup-events` | Email alerts |
+| CloudWatch > Alarms | `paywave-prod-lambda-errors`, `-lambda-throttles`, `-lambda-slow`, `-api-5xx`, `-rds-cpu`, `-rds-free-storage`, `-rds-connections` | Alarms |
+| CloudWatch > Dashboards | `paywave-prod` | Main dashboard |
+| CloudWatch > Log groups | `/aws/lambda/paywave-prod-api`, `/aws/apigateway/paywave-prod-access`, `/aws/eks/paywave-prod/cluster` | Logs |
+| AWS Backup | vault `paywave-prod-vault`, plan `paywave-prod-db`; DR vault `paywave-prod-vault-dr` | Backups |
+
+The `-pg`, `-api` and secret names are used by the dashboards, `scripts/destroy.sh` and the commands in this README, so they are left unchanged.
+
 ## Backup and disaster recovery
 
 All user data (accounts, balances, the ledger, notifications, AutoPay) is in the RDS database. Everything else is rebuilt from Git, Terraform and ECR, so the database is what gets backed up. Terraform (`terraform/backup.tf`, `rds.tf`) sets up four layers, with nothing to switch on:

@@ -10,6 +10,11 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "lambda" {
+  tags = {
+    Name    = "${local.name}-lambda-role"
+    Purpose = "IAM role used by the payments Lambda"
+  }
+
   name               = "${local.name}-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
@@ -51,6 +56,11 @@ data "aws_iam_policy_document" "apigw_assume" {
 }
 
 resource "aws_iam_role" "apigw_cloudwatch" {
+  tags = {
+    Name    = "${local.name}-apigw-logs-role"
+    Purpose = "IAM role letting API Gateway write logs"
+  }
+
   name               = "${local.name}-apigw-cloudwatch"
   assume_role_policy = data.aws_iam_policy_document.apigw_assume.json
 }
